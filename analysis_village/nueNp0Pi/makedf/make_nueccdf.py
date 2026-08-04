@@ -227,9 +227,9 @@ def make_nueNp0Pi_df(f):
         col = pad_column_name(('rec', 'dlp_true', label), slcdf)
         slcdf[col] = mask.values
 
-    # # pre-selection cuts
-    # slcdf = slcdf[slcdf.slc.is_clear_cosmic==0]
-    # slcdf = slcdf[slcdf.slc.nu_score > 0.5]
-    # slcdf = slcdf[InFV(df=slcdf.slc.vertex, inzback=0, det=DETECTOR)]    
-    
+    # pre-selection cuts
+    slcdf = slcdf[slcdf.rec.dlp['is_fiducial'] == 1]
+    slcdf = slcdf[slcdf.rec.dlp['is_flash_matched'] == 1]
+    slcdf = slcdf[slcdf.rec.dlp['is_contained'] == 1]
+
     return slcdf 
