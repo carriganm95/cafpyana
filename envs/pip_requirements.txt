@@ -17,3 +17,5 @@ corner
 lz4
 xxhash
 fsspec-xrootd
+statsmodels
+pytest

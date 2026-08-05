@@ -63,6 +63,9 @@ import numpy as np
 import pandas as pd
 
 from pyanalib.pandas_helpers import pad_column_name
+from pyanalib.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 # Generic clip epsilon used by ``get_clipped_evts`` to keep the top-bin edge
 # strictly inside the last bin (``numpy.histogram`` is right-open).
@@ -790,11 +793,16 @@ class ChunkRunner:
         rest can be set to None when running per-sample).
 
         ``pipeline_trace`` if set is called with human-readable lines (flush in the
-        callback) to localize stalls/crashes when debugging batch jobs.
+        callback) to localize stalls/crashes when debugging batch jobs. If omitted,
+        traces go to this module's logger at DEBUG level instead of nowhere -- set
+        ``CAFPYANA_LOG_LEVEL=DEBUG`` (see ``pyanalib.logging_utils``) to see them,
+        no need to wire a callback by hand.
         """
         def _tr(msg: str) -> None:
             if pipeline_trace is not None:
                 pipeline_trace(msg)
+            else:
+                logger.debug(msg)
 
         state = dict(initial_state)  # shallow copy; cut funcs do their own copies
 
@@ -841,6 +849,10 @@ class ChunkRunner:
         makedirs(path.dirname(out_path), exist_ok=True)
         with open(out_path, "wb") as f:
             pickle.dump(out, f)
+        logger.info(
+            "saved chunk pickle: sample=%s stages=%d histdata_keys=%d -> %s",
+            self.sample, len(self.stages), len(self.histdata), out_path,
+        )
 
 
 # ===========================================================================
@@ -855,6 +867,7 @@ def aggregate_chunk_files(chunk_files: List[str]) -> Dict[str, Any]:
     if not chunk_files:
         raise ValueError("no chunk files passed to aggregate_chunk_files")
 
+    logger.info("aggregating %d chunk file(s)", len(chunk_files))
     out: Optional[Dict[str, Any]] = None
     for cf in chunk_files:
         with open(cf, "rb") as f:
@@ -911,6 +924,7 @@ def merge_samples(samples: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     Intime and offbeam cosmics are kept in separate arrays until plotting so the
     central prediction can be chosen at aggregation time.
     """
+    logger.info("merging samples: %s", sorted(samples.keys()))
     # union of all (stage_key, plot_key) entries across samples
     all_keys = set()
     for s in samples.values():
@@ -1123,4 +1137,5 @@ def apply_global_exposure_scales(
             for ea in by_v.values():
                 ea.scale_pot_components(sf)
 
+    logger.info("applied global exposure scales: %s", sm)
     return sm

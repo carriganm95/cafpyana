@@ -8,7 +8,7 @@ save histogram + breakdown pickles per job, then aggregate with
 
 Typical notebook usage::
 
-    from analysis_village.numucc_1p0pi.event_selection_batched import (
+    from analysis_village.nueNp0Pi.event_selection_batched import (
         EventSelectionBatchedConfig,
         run_full,
     )
@@ -33,6 +33,7 @@ from analysis_village.nueNp0Pi.dataset_locations import (
     default_syst_disk_root,
     iter_event_selection_df_paths,
 )
+from pyanalib.syst_disk_layout import SYST_DISK_ENV
 
 SAMPLES: Tuple[str, ...] = ("mc",) #, "data", "intime", "offbeam", "dirt")
 _SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
@@ -351,7 +352,7 @@ def run_aggregate(cfg: EventSelectionBatchedConfig, batches_dir: Path | str | No
 
     syst_root = cfg.syst_disk_root
     if syst_root is None:
-        syst_root = os.environ.get("NUMUCC_SYST_DISK_ROOT")
+        syst_root = os.environ.get(SYST_DISK_ENV)
     if syst_root is None:
         syst_root = default_syst_disk_root()
     syst_root = Path(syst_root).expanduser()

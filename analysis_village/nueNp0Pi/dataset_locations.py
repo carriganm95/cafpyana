@@ -19,7 +19,7 @@ Edit paths **here only** so drivers stay thin:
 - ``run_syst_cosmics_chunked.sh`` — ``syst_cosmics_chunk.py`` / ``syst_cosmics_aggregate.py``;
   globs reuse ``EVENT_SELECTION_GLOBS`` ``offbeam`` / ``intime``.
 - ``default_syst_disk_root()`` — unified ``syst_disk_layout`` root (``Cosmics/``, ``MCstat/``,
-  ``Detector/``, …) used by the ``run_syst_*`` drivers unless ``NUMUCC_SYST_DISK_ROOT`` is set
+  ``Detector/``, …) used by the ``run_syst_*`` drivers unless ``SYST_DISK_ROOT`` is set
   or a script passes an explicit override.
 
 **Naming:** *HDF splits*, *map shards* (one ``.df`` file), and *exposure batches* (time-ordered
@@ -29,7 +29,7 @@ Relative globs are resolved from ``SPRING_GEN1_ROOT``. Override any constant by
 setting environment variables of the same name before importing (advanced).
 
 After producers fill the syst disk tree (``syst_disk_layout``), point ``utils.get_syst_unc`` /
-``event_selection_aggregate.py`` at the **root** via ``NUMUCC_SYST_DISK_ROOT`` or
+``event_selection_aggregate.py`` at the **root** via ``SYST_DISK_ROOT`` or
 ``--syst-disk-root`` (subfolders ``MCstat``, ``Flux``, ``G4``, ``GENIE``, ``Cosmics``,
 ``Detector``). Loaders require every expected file; there are no alternate search paths.
 """
@@ -44,6 +44,17 @@ from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from makedf.geniesyst import *
+from pyanalib.syst_disk_layout import SYST_DISK_ENV
+
+# -----------------------------------------------------------------------------
+# Flux input (see makedf.flux.get_integrated_flux / get_xsec_unit).
+# Folded in from the analysis's former paths_config.py -- this is now the one
+# place absolute input-file paths for nueNp0Pi live.
+# -----------------------------------------------------------------------------
+FLUX_FILE = os.environ.get(
+    "NUENP0PI_FLUX_FILE",
+    "/exp/sbnd/data/users/munjung/flux/sbnd_original_flux.root",
+)
 
 # -----------------------------------------------------------------------------
 # Base release (Spring Gen 1 — edit for other campaigns)
@@ -77,7 +88,11 @@ PLOTS_BASE = Path(
 EVENT_SELECTION_GLOBS: Dict[str, str] = {
     # "mc": str(SPRING_GEN1_ROOT / "2026_05_11_041007__sel_all-mc-BNB_cosmics/*df"),
     #"mc": str(SPRING_GEN1_ROOT / "2026_05_11_183347__sel_all-mc-BNB_cosmics-EField_R00/*df"),
-    "mc": str(SPRING_GEN1_ROOT / "/pnfs/sbnd/scratch/users/micarrig/cafpyana_out/dfs/2026_08_04_142220__output_v1/*.df"),
+    # NOTE: this used to be joined as an ALREADY-ABSOLUTE path
+    # (SPRING_GEN1_ROOT / "/pnfs/..."), which pathlib silently resolves to just the
+    # absolute right-hand side -- so overriding NUMUCC_SPRING_GEN1_ROOT had no effect
+    # on this glob. Made relative so it actually composes with SPRING_GEN1_ROOT.
+    "mc": str(SPRING_GEN1_ROOT / "2026_08_04_142220__output_v1/*.df"),
     # "data": str(SPRING_GEN1_ROOT / "2026_05_16_230859__sel_all-data-1e20/*.df"),
     # "intime": str(SPRING_GEN1_ROOT / "2026_05_11_040132__sel_all-mc-Intime/*.df"),
     # "offbeam": str(SPRING_GEN1_ROOT / "2026_05_11_035756__sel_all-data-OffBeamLight/*.df"),
@@ -388,11 +403,12 @@ def default_detvar_syst_work_root(tag: str | None = None) -> Path:
 def default_syst_disk_root() -> Path:
     """Default root for the unified ``syst_disk_layout`` tree (``Cosmics/``, ``MCstat/``, …).
 
-    Same logical tree that ``utils.get_syst_unc`` reads when ``NUMUCC_SYST_DISK_ROOT`` is set.
-    If that environment variable is set, this function returns that path (expanded). If not,
-    returns a stable per-user default so ``run_syst_*`` scripts can aggregate without extra args.
+    Same logical tree that ``utils.get_syst_unc`` reads when ``SYST_DISK_ROOT`` (see
+    ``pyanalib.syst_disk_layout.SYST_DISK_ENV``) is set. If that environment variable is
+    set, this function returns that path (expanded). If not, returns a stable per-user
+    default so ``run_syst_*`` scripts can aggregate without extra args.
     """
-    env = os.environ.get("NUMUCC_SYST_DISK_ROOT")
+    env = os.environ.get(SYST_DISK_ENV)
     if env:
         return Path(env).expanduser()
     return Path(

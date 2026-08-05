@@ -1,6 +1,6 @@
 """Monolithic HDF loaders for notebooks and cosmics blocks in multisim aggregate.
 
-Chunked drivers take input paths from :mod:`analysis_village.numucc_1p0pi.dataset_locations`.
+Chunked drivers take input paths from :mod:`analysis_village.nueNp0Pi.dataset_locations`.
 """
 
 from pyanalib.split_df_helpers import *

@@ -16,5 +16,5 @@ EPSILON = 1e-6 # for clipping distributions at bin ranges
 
 # xsec-unit calculation (flux integration, active volume, N targets) now lives in
 # makedf.flux.get_xsec_unit; this analysis's flux-file path is in
-# analysis_village.nueNp0Pi.paths_config.FLUX_FILE. This used to be a dead
+# analysis_village.nueNp0Pi.dataset_locations.FLUX_FILE. This used to be a dead
 # commented-out duplicate of analysis_village.nueNp0Pi.utils.get_xsec_unit -- removed.
