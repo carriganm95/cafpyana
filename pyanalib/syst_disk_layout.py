@@ -1,7 +1,7 @@
-"""On-disk layout for precomputed systematic covariances consumed by ``utils.get_syst_unc``.
+"""On-disk layout for precomputed systematic covariances consumed by ``get_syst_unc``-style loaders.
 
-Set ``NUMUCC_SYST_DISK_ROOT`` to a directory with **exactly** this structure (one subdirectory per
-systematic **source**):
+Set ``SYST_DISK_ENV`` (default env var name: ``SYST_DISK_ROOT``) to a directory with **exactly**
+this structure (one subdirectory per systematic **source**):
 
 .. code-block:: text
 
@@ -12,9 +12,13 @@ systematic **source**):
       GENIE/cov_mat_dict.pkl
       Cosmics/cosmics_syst_dict.npz
       Detector/detector_syst_dict.npz
-      CategorySummary/category_syst_summary.npz   (from ``systematics-summary.ipynb``)
+      CategorySummary/category_syst_summary.npz   (from a systematics-summary notebook)
 
 Producer scripts write into these paths; loaders **fail** if any expected file is missing.
+
+This module is analysis-agnostic: any analysis under ``analysis_village`` can reuse it by
+pointing ``SYST_DISK_ROOT`` (or an analysis-specific env var, if it prefers) at its own
+precomputed-systematics tree.
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ import os
 import pickle
 from typing import Any
 
-SYST_DISK_ENV = "NUMUCC_SYST_DISK_ROOT"
+SYST_DISK_ENV = "SYST_DISK_ROOT"
 
 SUB_MCSTAT = "MCstat"
 SUB_FLUX = "Flux"

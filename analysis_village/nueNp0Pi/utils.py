@@ -18,7 +18,9 @@ from analysis_village.unfolding.wienersvd import *
 from analysis_village.nueNp0Pi.categories import *
 from analysis_village.nueNp0Pi.constants import *
 from analysis_village.nueNp0Pi.selection_framework import multicol_get_series
-from analysis_village.nueNp0Pi.syst_disk_layout import (
+from analysis_village.nueNp0Pi.variable_configs import INTEGRATED_HIST_DUMMY, INTEGRATED_VAR_SAVE_NAME
+from pyanalib.chunked_selection import get_clipped_evts as _get_clipped_evts_shared
+from pyanalib.syst_disk_layout import (
     FILE_GENIE,
     SUB_GENIE,
     SYST_DISK_ENV,
@@ -26,6 +28,25 @@ from analysis_village.nueNp0Pi.syst_disk_layout import (
     category_summary_npz_path,
     syst_disk_paths,
 )
+from analysis_village.plot_style.sbnd_style import (
+    get_textloc_x,
+    add_approval_text,
+    add_pot_text,
+    add_chi2_text,
+    add_genie_version_text,
+    format_singlebin_plot,
+    get_text_color,
+    bin_range_labels,
+    plot_heatmap,
+    plot_frac_unc,
+)
+from makedf.flux import (
+    get_active_volume,
+    get_integrated_flux,
+    get_xsec_unit,
+    print_sbnd_octant_vertex_ranges,
+)
+from analysis_village.nueNp0Pi.paths_config import FLUX_FILE
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -52,13 +73,13 @@ def _fail_syst_disk(msg: str) -> None:
 
 
 def resolve_syst_disk_root(explicit): # str | None) -> str:
-    """Return normalized syst disk root from argument or ``NUMUCC_SYST_DISK_ROOT``."""
+    """Return normalized syst disk root from argument or ``SYST_DISK_ROOT`` (see ``SYST_DISK_ENV``)."""
     root = explicit or os.environ.get(SYST_DISK_ENV)
     if not root:
         _fail_syst_disk(
             "No syst disk root. Set environment variable %s or pass syst_disk_root= to "
             "get_syst_unc(). Expected layout: <root>/MCstat/mcstat_syst_dict.npz, "
-            "<root>/Flux/flux_syst_dict.npz, … — see analysis_village.numucc_1p0pi.syst_disk_layout."
+            "<root>/Flux/flux_syst_dict.npz, … — see pyanalib.syst_disk_layout."
             % SYST_DISK_ENV
         )
     return syst_disk_paths(root)["root"]
@@ -91,9 +112,9 @@ def get_syst_unc(
 ):
     """Load fractional covariance blocks from the syst-disk tree and combine into total covariance.
 
-    All inputs live under a single root directory (see ``syst_disk_layout``): ``MCstat/``,
+    All inputs live under a single root directory (see ``pyanalib.syst_disk_layout``): ``MCstat/``,
     ``Flux/``, ``G4/``, ``GENIE/``, ``Cosmics/``, ``Detector/``. If ``syst_disk_root`` is omitted,
-    ``NUMUCC_SYST_DISK_ROOT`` must be set. **Missing files abort with a loud error** — there are
+    ``SYST_DISK_ROOT`` must be set. **Missing files abort with a loud error** — there are
     no alternate search paths or dated campaign fallbacks.
 
     Parameters
@@ -616,31 +637,33 @@ def _var_weights_for_cut(var, weights, cut):
 
 
 def get_clipped_evts(df, var_col, bins, verbose=False, var_save_name=None):
-    # VariableConfig tuples are often padded to evt depth (e.g. 7); mcnu HDF may be 4-level.
-    from analysis_village.numucc_1p0pi.variable_configs import (
-        INTEGRATED_HIST_DUMMY,
-        INTEGRATED_VAR_SAVE_NAME,
-    )
+    """Clip variable to bin range and return weights.
 
+    Thin nueNp0Pi-specific wrapper around ``pyanalib.chunked_selection.get_clipped_evts``:
+    the only local behavior is the ``"integrated"`` single-bin sentinel (all events placed
+    in one dummy bin for total/integrated-flux cross-section plots) via
+    ``var_config.var_save_name == INTEGRATED_VAR_SAVE_NAME``. Everything else is delegated
+    to the shared implementation so there is one source of truth for the normal path.
+
+    NOTE: previously this imported ``INTEGRATED_HIST_DUMMY``/``INTEGRATED_VAR_SAVE_NAME``
+    from ``analysis_village.numucc_1p0pi.variable_configs``, which does not exist in this
+    repo -- that made every call to this function raise ``ModuleNotFoundError``. Fixed to
+    import from this analysis's own ``variable_configs`` module.
+    """
     if var_save_name == INTEGRATED_VAR_SAVE_NAME:
         var = np.full(len(df), INTEGRATED_HIST_DUMMY, dtype=float)
-    elif isinstance(var_col, tuple) and isinstance(df.columns, pd.MultiIndex):
-        var = multicol_get_series(df, var_col)
-    else:
-        var = df[var_col]
-    var = _as_1d_float_array(var, name=str(var_col))
-    var = np.clip(var, bins[0], bins[-1] - EPSILON)
-
-    if 'pot_weight' in df.columns:
-        weights = df.loc[:, 'pot_weight']
-    else:
-        if verbose:
-            print("No pot_weight column found, return 1 as pot scale (expected for data)")
-        weights = np.ones_like(var)
-    weights = _as_1d_float_array(weights, name="pot_weight")
-    # One NaN weight makes numpy.histogram return NaN in all bins.
-    weights = np.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
-    return var, weights
+        var = _as_1d_float_array(var, name=str(var_col))
+        var = np.clip(var, bins[0], bins[-1] - EPSILON)
+        if 'pot_weight' in df.columns:
+            weights = df.loc[:, 'pot_weight']
+        else:
+            if verbose:
+                print("No pot_weight column found, return 1 as pot scale (expected for data)")
+            weights = np.ones_like(var)
+        weights = _as_1d_float_array(weights, name="pot_weight")
+        weights = np.nan_to_num(weights, nan=0.0, posinf=0.0, neginf=0.0)
+        return var, weights
+    return _get_clipped_evts_shared(df, var_col, bins, verbose=verbose)
 
 def get_eff_err(success,total):  # success/total
     err = [[],[]]
@@ -991,98 +1014,9 @@ def get_response_matrix(reco_vs_true,
 
 
 # ====== plotting functions ======
-
-# ==== plot additions ====
-def get_textloc_x(values, bins, textloc=[0.05, 0.55]):
-    textloc_x, _ = textloc
-    n_firsthalf = np.sum(values[:len(bins)//2])
-    n_secondhalf = np.sum(values[len(bins)//2:])
-    if n_firsthalf < n_secondhalf:
-        textloc_x, textloc_ha = textloc_x, 'left'
-    else:
-        textloc_x, textloc_ha = 1-textloc_x, 'right'
-    return textloc_x, textloc_ha
-
-
-def add_approval_text(approval, textloc_x, textloc_y, textloc_ha, fontsize=20):
-    if approval == "internal":
-        approval_text = r"$\mathbf{SBND}$ Internal"
-        textcolor = 'rosybrown'
-
-    elif approval == "preliminary":
-        approval_text = r"$\mathbf{SBND}$ Preliminary"
-        textcolor = 'gray'
-
-    else:
-        return # don't add anything
-
-    ax = plt.gcf().axes[0]  # get the first axes of the current figure
-    ax.text(
-        textloc_x, textloc_y,
-        approval_text,
-        transform=ax.transAxes,
-        ha=textloc_ha, va='top',
-        fontsize=fontsize, color=textcolor
-    )
-
-def add_pot_text(pot_text, textloc_x, textloc_y, textloc_ha, fontsize=20):
-    textcolor = 'black'
-    ax = plt.gcf().axes[0]  # get the first axes of the current figure
-    ax.text(
-        textloc_x, textloc_y,
-        pot_text,
-        transform=ax.transAxes,
-        ha=textloc_ha, va='top',
-        fontsize=fontsize, color=textcolor
-    )
-
-def add_chi2_text(
-    chi2_val,
-    p_val,
-    ndof,
-    textloc_x,
-    textloc_y,
-    textloc_ha,
-    label="",
-    chi2_shape=None,
-    p_val_shape=None,
-    ndof_shape=None,
-):
-    ax = plt.gcf().axes[0]  # get the first axes of the current figure
-    prefix = f"{label} " if label else ""
-    lines = [
-        f"{prefix}$\\chi^2$/ndof = {chi2_val:.1f}/{int(ndof)} (p-value = {p_val:.2f})"
-    ]
-    if chi2_shape is not None and p_val_shape is not None:
-        ndof_s = int(ndof_shape) if ndof_shape is not None else max(int(ndof) - 1, 1)
-        lines.append(
-            f"{prefix}$\\chi^2_{{\\mathrm{{shape}}}}$/ndof = "
-            f"{chi2_shape:.1f}/{ndof_s} (p-value = {p_val_shape:.2f})"
-        )
-    ax.text(
-        textloc_x,
-        textloc_y,
-        "\n".join(lines),
-        transform=ax.transAxes,
-        ha=textloc_ha,
-        va="top",
-        fontsize=12,
-        color="black",
-        linespacing=1.35,
-    )
-
-def add_genie_version_text(textloc_x, textloc_y, textloc_ha):
-    ax = plt.gcf().axes[0]  # get the first axes of the current figure
-    ax.text(textloc_x, textloc_y, 
-            r"GENIE v3.4.0 AR23_00i_00_000", 
-            transform=ax.transAxes, 
-            ha=textloc_ha, va='top',
-            fontsize=12, color='gray')
-
-def format_singlebin_plot():
-    ax = plt.gcf().axes[0]
-    ax.set_xticks([])
-
+# get_textloc_x / add_approval_text / add_pot_text / add_chi2_text /
+# add_genie_version_text / format_singlebin_plot moved to
+# analysis_village.plot_style.sbnd_style (generic, no nueNp0Pi coupling).
 
 # ==== bar plot ====
 def bar_plot(breakdown_type="topology", 
@@ -3015,264 +2949,15 @@ def signal_hists(evtdf=None,  # df with selected & reco'ed events
             "nevts_allsel_reco": nevts_allsel_reco,
         }
 
-# ==== fractional uncertainty plot ====
-def plot_frac_unc(frac_unc_list, 
-                  var_config, 
-                  plot_labels=["", "", ""],
-                  legends = None,
-                  textloc=[0.05, 0.55],
-                  approval="internal",
-                  plot=True,
-                  save_fig=False, 
-                  save_name=None):
-
-    for fidx, frac_unc in enumerate(frac_unc_list):
-        color = "C{}".format(fidx)
-        if len(frac_unc_list) == 1:
-            color = "black"
-        plt.hist(var_config.bin_centers, bins=var_config.bins, weights=frac_unc, histtype="step", color=color)
-
-    plt.xlim(var_config.bins[0], var_config.bins[-1])
-    plt.xlabel(var_config.var_labels[0])
-    plt.ylabel("Fractional Uncertainty")
-    plt.title(plot_labels[2])
-    plt.grid(True)
-
-    if legends is not None:
-        plt.legend(legends)
-
-    textloc_x, textloc_ha = get_textloc_x(frac_unc, var_config.bins, textloc)
-    textloc_y = textloc[1]
-    add_approval_text(approval, textloc_x, textloc_y, textloc_ha)
-
-    if var_config.var_save_name == "integrated":
-        format_singlebin_plot()
-
-    if save_fig:
-        plt.savefig(save_name+fig_ext, bbox_inches='tight', dpi=dpi)
-
-    if plot == True:
-        plt.show()
-    else:
-        plt.close()
-
-
-# ==== 2D plots ====
-
-def get_text_color(value):
-    rgba = cmap(norm(value))
-    # Compute luminance (perceived brightness)
-    luminance = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
-    return "black" if luminance > 0.5 else "white"
-
-
-def bin_range_labels(edges):
-    return [f"{edges[i]:.2f}–{edges[i+1]:.2f}" for i in range(len(edges)-1)]
-
-
-def plot_heatmap(matrix, 
-                 bins,
-                 plot_labels=["", "", ""],
-                 approval="internal",
-                 verbose=False,
-                 plot=True,
-                 cmap="bwr",
-                 save_fig=False, 
-                 save_name=None,
-                 leave_open=False):
-
-    nbins = len(bins)
-    assert nbins-1 == matrix.shape[0] == matrix.shape[1]
-    unif_bin = np.linspace(0., float(nbins - 1), nbins)
-    extent = [unif_bin[0], unif_bin[-1], unif_bin[0], unif_bin[-1]]
-
-    x_edges, y_edges = np.array(bins), np.array(bins)
-    x_tick_positions, y_tick_positions = (unif_bin[:-1] + unif_bin[1:]) / 2, (unif_bin[:-1] + unif_bin[1:]) / 2
-    x_labels, y_labels = bin_range_labels(x_edges), bin_range_labels(y_edges)
-
-    fig, ax = plt.subplots(figsize=(12, 12))
-    if cmap == "bwr":
-        plt.imshow(matrix, extent=extent, origin="lower", vmin=-1, vmax=1, cmap=cmap)
-    else:
-        plt.imshow(matrix, extent=extent, origin="lower", cmap=cmap)
-
-    # Find the power-of-10 exponent from one of the (non-NaN) values
-    exponent = 0
-    flat_matrix = matrix[~np.isnan(matrix)]
-    if flat_matrix.size > 0 and np.any(flat_matrix != 0):
-        example_value = flat_matrix[0]
-        exponent = np.floor(np.log10(abs(example_value)))
-        # if exponent is infinite (matrix contains only zeros), set to 0
-        if np.isinf(exponent):
-            exponent = 0
-        exponent = int(exponent)
-
-        # # Round to nearest multiple of 3 for best tick label presentation
-        # exponent = 3 * int(np.floor(exponent / 3))
-
-        formatter = mpl.ticker.FuncFormatter(lambda x, _: f"{x/10**exponent:.2f}")
-        cbar = plt.colorbar(shrink=0.7)
-        # cbar.set_label(f"{plot_labels[2]} [10$^{{{exponent}}}$]", fontsize=16)
-        if exponent != 0 and exponent != -1:
-            cbar.set_label(plot_labels[2] + f" [10$^{{{exponent}}}$]", fontsize=16)
-        else:
-            cbar.set_label(plot_labels[2], fontsize=16)
-        cbar.ax.yaxis.set_major_formatter(formatter)
-
-    # else:
-    #     plt.colorbar(shrink=0.7, label=plot_labels[2])
-
-    for i in range(nbins-1):      # rows (y)
-        for j in range(nbins-1):  # columns (x)
-            value = matrix[i, j]
-            if not np.isnan(value):  # skip NaNs
-                if exponent != -1:
-                    significand = value / 10**exponent
-                else:
-                    significand = value
-                plt.text(
-                    j + 0.5, i + 0.5,
-                    f"{significand:.2f}",
-                    ha="center", va="center",
-                    color=get_text_color(value),
-                    fontsize=10
-                )
-
-    plt.xticks(x_tick_positions, x_labels, rotation=45, ha="right")
-    plt.yticks(y_tick_positions, y_labels)
-    plt.xlabel(plot_labels[0], fontsize=20)
-    plt.ylabel(plot_labels[1], fontsize=20)
-    if len(plot_labels) > 3:
-        plt.title(plot_labels[3], fontsize=20)
-    else:
-        plt.title(plot_labels[2], fontsize=20)
-
-    if verbose:
-        n_diag = np.sum(np.diag(matrix))
-        diagonal_ratio = n_diag / np.sum(matrix)
-        print(f"Diagonal ratio: {diagonal_ratio:.2f}")
-        print(f"True ratio: {np.diag(matrix) / np.sum(matrix, axis=0)}")
-
-        # print
-
-    # ===== plot additions =====
-    add_approval_text(approval, 0.95, 1.05, "right")
-
-    if save_fig:
-        plt.savefig(save_name+fig_ext, bbox_inches='tight', dpi=dpi)
-
-    if plot:
-        plt.show()
-    elif not leave_open:
-        plt.close()
-
-
-
+# plot_frac_unc / get_text_color / bin_range_labels / plot_heatmap moved to
+# analysis_village.plot_style.sbnd_style (generic, no nueNp0Pi coupling).
 
 ####
 # Exposure Accounting
 
 # ====== flux, detector geometry, and cross-section normalization ======
-def get_integrated_flux(fluxfile, plot=False):
-    # flux file, units: /m^2/10^6 POT 
-    # 50 MeV bins
-    flux = uproot.open(fluxfile)
-    numu_flux = flux["flux_sbnd_numu"].to_numpy()
-    bin_edges = numu_flux[1]
-    flux_vals = numu_flux[0]
-
-    if plot:
-        fig, ax = plt.subplots()
-        plt.hist(bin_edges[:-1], bins=bin_edges, weights=flux_vals, histtype="step", linewidth=2, color="C0")
-        plt.xlim(0, 3)
-        plt.xlabel("Neutrino Energy [GeV]")
-        plt.ylabel("Flux [/m$^{2}$/10$^{6}$ POT]")
-        plt.title("SBND $\\nu_\\mu$ Flux")
-        plt.savefig("sbnd-flux.pdf", bbox_inches='tight')
-
-    integrated_flux = flux_vals.sum() / (1e4  * 1e6) # to cm2 # to POT
-    print("Integrated flux: %.3e" % integrated_flux)
-    return integrated_flux
-
-
-def get_active_volume(detector="SBND"):
-    if detector == "SBND":
-        V_SBND = 380 * 380 * 440 # cm3, the active volume of the detector 
-
-    elif detector == "SBND_nohighyz":
-        V_SBND = 380 * 380 * 440 - 380* (190 - 100) *(450-250) 
-
-    elif detector == "SBND_face":
-        V_SBND = 380 * 380 * 50
-
-    elif detector == "SBND_face_yzcut":
-        V_SBND = 380 * 380 * 50 - 380* (190 - 100) * 50 
-
-    elif detector == "SBND_end":
-        V_SBND = 380 * 380 * 50
-
-    return V_SBND
-
-
-def print_sbnd_octant_vertex_ranges(x0, y0, z0):
-    """Print octant labels vs reco vertex (x, y, z) in cm.
-
-    Matches the convention in ``selected_events`` octant labeling: split planes at
-    ``x0``, ``y0``, ``z0``; E/W from ``x``, N/S from ``z``, Top/Bottom from ``y``.
-    SBND: **East** is ``x < x0``; **West** is ``x >= x0``.
-    **South** is ``z < z0``; **North** is ``z > z0`` (``z >= z0`` at the split plane).
-    **Top** is ``y >= y0``; **Bottom** is ``y < y0``.
-    """
-    xf, yf, zf = float(x0), float(y0), float(z0)
-    xs, ys, zs = "{:.6g}".format(xf), "{:.6g}".format(yf), "{:.6g}".format(zf)
-    print("\n=== SBND octants vs reco vertex [cm]; planes x={}, y={}, z={} ===".format(xs, ys, zs))
-    print("  E/W (TPC sides):  E if x < {} (negative x),    W if x >= {}".format(xs, xs))
-    print("  N/S:              S if z < {} (lower z),    N if z >= {}".format(zs, zs))
-    print("  Top / Bottom:     Bottom if y < {},    Top if y >= {}".format(ys, ys))
-    # x: E → x < x0 ; W → x >= x0.  z: S → z < z0 ; N → z >= z0.
-    rows = [
-        ("W-S-Bottom", "[{}, +inf)".format(xs), "(-inf, {})".format(zs), "(-inf, {})".format(ys)),
-        ("W-S-Top", "[{}, +inf)".format(xs), "(-inf, {})".format(zs), "[{}, +inf)".format(ys)),
-        ("W-N-Bottom", "[{}, +inf)".format(xs), "[{}, +inf)".format(zs), "(-inf, {})".format(ys)),
-        ("W-N-Top", "[{}, +inf)".format(xs), "[{}, +inf)".format(zs), "[{}, +inf)".format(ys)),
-        ("E-S-Bottom", "(-inf, {})".format(xs), "(-inf, {})".format(zs), "(-inf, {})".format(ys)),
-        ("E-S-Top", "(-inf, {})".format(xs), "(-inf, {})".format(zs), "[{}, +inf)".format(ys)),
-        ("E-N-Bottom", "(-inf, {})".format(xs), "[{}, +inf)".format(zs), "(-inf, {})".format(ys)),
-        ("E-N-Top", "(-inf, {})".format(xs), "[{}, +inf)".format(zs), "[{}, +inf)".format(ys)),
-    ]
-    hdr = "{:14}  {:^26}  {:^26}  {:^26}".format("octant", "x range", "z range", "y range")
-    print("\n" + hdr)
-    print(" " + "-" * (len(hdr) + 2))
-    for name, xr, zr, yr in rows:
-        print("{:14}  {:^26}  {:^26}  {:^26}".format(name, xr, zr, yr))
-    print(
-        "\nBoundary vertices: x=x0 uses >= toward West; z=z0 uses >= toward North; y=y0 uses >= toward Top.\n"
-    )
-
-
-def get_xsec_unit(tot_pot, 
-                  fluxfile="/exp/sbnd/data/users/munjung/flux/sbnd_original_flux.root", 
-                  detector="SBND",
-                  volume=None):
-
-    tot_flux = get_integrated_flux(fluxfile, plot=False)
-    tot_flux *= tot_pot
-    print("integrated flux: ", tot_flux)
-
-    V_SBND = get_active_volume(detector)
-    if volume is not None:
-        print("using custom volume: ", volume)
-        V_SBND = volume
-
-    NTARGETS = RHO * V_SBND * (N_A / M_AR) #/ 40 # divide by 40 to make this per-argon nucleus
-    print("# of targets: ", NTARGETS)
-
-    xsec_unit = 1 / (tot_flux * NTARGETS)
-    # # TODO: fix scalar overflow error in python v3.10+
-    # if xsec_unit == 0:
-    #     print("XSEC_UNIT is 0, setting to 1e-38")
-    #     xsec_unit = 1e-38
-    print("xsec unit: ", xsec_unit)
-    return xsec_unit
-
-    
+# get_integrated_flux / get_active_volume / print_sbnd_octant_vertex_ranges /
+# get_xsec_unit moved to makedf.flux (generic, no nueNp0Pi coupling, no
+# hardcoded personal file paths). This analysis's flux-file path now lives
+# in analysis_village.nueNp0Pi.paths_config.FLUX_FILE -- pass it explicitly:
+#     get_xsec_unit(tot_pot, fluxfile=FLUX_FILE)

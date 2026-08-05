@@ -1,59 +1,36 @@
 import numpy as np
 import inspect
 
+from pyanalib.variable_config import (
+    VariableConfig as _BaseVariableConfig,
+    INTEGRATED_VAR_SAVE_NAME,
+    is_integrated_var_config,
+)
+
 # ===== References
 # MicroBooNE tki bins: https://arxiv.org/abs/2301.03700
 
 # Constant axis for the single-bin ``integrated`` measurement (all events in one bin).
-# Matches wiremod/sce cov production (``np.full(..., 500.)``), not the ``iscc`` placeholder columns.
+# Matches wiremod/sce cov production (``np.full(..., 500.)``), not the ``iscc`` placeholder
+# columns. This dummy value is specific to this analysis's production convention, so it
+# stays here rather than in the shared ``pyanalib.variable_config`` base.
 INTEGRATED_HIST_DUMMY = 500.0
 
-INTEGRATED_VAR_SAVE_NAME = "integrated"
 
-
-
-
-def is_integrated_var_config(var_config) -> bool:
-    return getattr(var_config, "var_save_name", None) == INTEGRATED_VAR_SAVE_NAME
-
-
-class VariableConfig:
+class VariableConfig(_BaseVariableConfig):
     """
-    A configurable class for setting up unfolding variable configurations.
-    Choose a configuration using one of the provided class methods,
-    or instantiate directly with custom parameters.
+    nueNp0Pi variable factories, built on the generic record shape in
+    ``pyanalib.variable_config.VariableConfig``. Choose a configuration using
+    one of the provided class methods, or instantiate directly with custom
+    parameters.
     """
-    def __init__(
-        self,
-        var_save_name,
-        var_plot_name,
-        var_labels,
-        bins,
-        var_evt_reco_col,
-        var_evt_truth_col,
-        var_nu_col,
-        xsec_label,
-        category_syst_var_save_name=None,
-    ):
-        self.var_save_name = var_save_name
-        self.var_plot_name = var_plot_name
-        self.var_labels = var_labels
-        self.bins = bins
-        self.bin_centers = (bins[:-1] + bins[1:]) / 2.
-        self.var_evt_reco_col = var_evt_reco_col
-        self.var_evt_truth_col = var_evt_truth_col
-        self.var_nu_col = var_nu_col
-        self.xsec_label = xsec_label
-        # Optional: load category-summary syst for a different variable (same bin count).
-        self.category_syst_var_save_name = category_syst_var_save_name
-
 
     # ==== variables for xsec measurement ====
     # for a integrated single-bin measurement of all events
     @classmethod
     def all_events(cls):
         return cls(
-            var_save_name="integrated",
+            var_save_name=INTEGRATED_VAR_SAVE_NAME,
             var_plot_name="All Events",
             var_labels=[r"All Events", 
             r"All Events", ""],
