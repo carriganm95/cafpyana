@@ -502,6 +502,7 @@ class EfficiencyAccumulator:
     n_total_signal_int_raw: float = 0.0
     n_at_stage_int: float = 0.0     # total events (any topology) POT-weighted (evt)
     n_at_stage_int_raw: float = 0.0  # raw event count at stage (notebook parity)
+    n_total_truth_nu_int: float = 0.0  # denominator integral from fill_denominator_from_first_stage_evt
 
     @classmethod
     def empty(cls, var_config) -> "EfficiencyAccumulator":
@@ -547,21 +548,76 @@ class EfficiencyAccumulator:
         self.n_truth_nu_pot += h_pot
         self.n_truth_nu_raw += h_raw
 
-    def fill_numerator_from_evt(self, evt_df, var_config, signal_mask_evt):
+    def fill_denominator_from_first_stage_evt(self, evt_df, var_config, signal_mask_fn: Callable):
+        """Fill denominator from evt_df at allreco so that stage shows 100% efficiency.
+
+        Uses ``var_evt_truth_col`` (DLP true kinematics) for the x-axis since it is
+        available for all DLP-truth-matched signal events.  Falls back to ``var_nu_col``
+        when ``var_evt_truth_col`` does not resolve.
+        """
+        if evt_df is None or len(evt_df) == 0:
+            return
+        truth_col = getattr(var_config, "var_evt_truth_col", None)
+        if truth_col is None or multicol_resolve_column_key(evt_df, truth_col) is None:
+            truth_col = getattr(var_config, "var_nu_col", None)
+        if truth_col is None or multicol_resolve_column_key(evt_df, truth_col) is None:
+            return
+        weights = (
+            evt_df["pot_weight"]
+            if "pot_weight" in evt_df.columns
+            else np.ones(len(evt_df))
+        )
+        weights = np.asarray(weights, dtype=float)
+        sig_mask = signal_mask_fn(evt_df)
+        sig_df = evt_df[sig_mask]
+        if len(sig_df) == 0:
+            return
+        sm = np.asarray(sig_mask.values, dtype=bool) if hasattr(sig_mask, "values") \
+            else np.asarray(sig_mask, dtype=bool)
+        sig_w = weights[sm]
+        # Track the total integral separately from the histogram so that NaN x-axis
+        # values (e.g. mc.iscc for DLP-truth events without a GENIE match) do not
+        # cause denom_int_pot to undercount relative to n_total_signal_int.
+        self.n_total_truth_nu_int += float(sig_w.sum())
+        var_sig, _ = get_clipped_evts(sig_df, truth_col, self.bins)
+        h_pot, _ = np.histogram(var_sig, bins=self.bins, weights=sig_w)
+        h_raw, _ = np.histogram(var_sig, bins=self.bins)
+        # Attribute events whose x-axis value is NaN to the first bin so that
+        # sum(n_truth_nu_pot) == n_total_truth_nu_int and Wilson CIs use the full
+        # signal count rather than only GENIE-matched events.  For variables whose
+        # truth column is always non-NaN (e.g. ele_energy_true_GeV) this is a no-op.
+        n_nan_raw = len(sig_df) - int(h_raw.sum())
+        if n_nan_raw > 0:
+            h_raw[0] += n_nan_raw
+        n_nan_pot = float(sig_w.sum()) - float(h_pot.sum())
+        if n_nan_pot > 0.0:
+            h_pot[0] += n_nan_pot
+        self.n_truth_nu_pot += h_pot
+        self.n_truth_nu_raw += h_raw
+
+    def fill_numerator_from_evt(self, evt_df, var_config, signal_mask_evt, prefer_truth_col: bool = False):
         """Signal spectrum on reco slices × truth-on-slice column.
 
         ``signal_mask_evt``: precomputed boolean mask (from the analysis's
         ``signal_mask_fn`` applied to ``evt_df``) selecting truth-signal rows.
+        ``prefer_truth_col``: when True, try ``var_evt_truth_col`` before ``var_nu_col``
+        so that the numerator x-axis matches the denominator filled by
+        ``fill_denominator_from_first_stage_evt``.
         """
         if evt_df is None or len(evt_df) == 0:
             return
-        # For "full selection" efficiency curves we want stage-by-stage spectra even
-        # before track-candidate assignment. Those stages do not have matched track-truth
-        # columns yet (var_evt_truth_col), but they DO carry generator truth in the
-        # evt.mc block (var_nu_col). Use that when present; otherwise fall back.
-        truth_col = getattr(var_config, "var_nu_col", None)
-        if truth_col is None or multicol_resolve_column_key(evt_df, truth_col) is None:
-            truth_col = var_config.var_evt_truth_col
+        if prefer_truth_col:
+            truth_col = getattr(var_config, "var_evt_truth_col", None)
+            if truth_col is None or multicol_resolve_column_key(evt_df, truth_col) is None:
+                truth_col = getattr(var_config, "var_nu_col", None)
+        else:
+            # For "full selection" efficiency curves we want stage-by-stage spectra even
+            # before track-candidate assignment. Those stages do not have matched track-truth
+            # columns yet (var_evt_truth_col), but they DO carry generator truth in the
+            # evt.mc block (var_nu_col). Use that when present; otherwise fall back.
+            truth_col = getattr(var_config, "var_nu_col", None)
+            if truth_col is None or multicol_resolve_column_key(evt_df, truth_col) is None:
+                truth_col = var_config.var_evt_truth_col
         if multicol_resolve_column_key(evt_df, truth_col) is None:
             return
         weights = evt_df["pot_weight"] if "pot_weight" in evt_df.columns else np.ones(len(evt_df))
@@ -577,6 +633,15 @@ class EfficiencyAccumulator:
         var_sig, _ = get_clipped_evts(sig_df, truth_col, self.bins)
         h_pot, _ = np.histogram(var_sig, bins=self.bins, weights=sig_w)
         h_raw, _ = np.histogram(var_sig, bins=self.bins)
+        if prefer_truth_col:
+            # Mirror the NaN attribution in fill_denominator_from_first_stage_evt so that
+            # per-bin efficiency and Wilson CIs are consistent with the denominator.
+            n_nan_raw = len(sig_df) - int(h_raw.sum())
+            if n_nan_raw > 0:
+                h_raw[0] += n_nan_raw
+            n_nan_pot = float(sig_w.sum()) - float(h_pot.sum())
+            if n_nan_pot > 0.0:
+                h_pot[0] += n_nan_pot
         self.n_signal_pot += h_pot
         self.n_signal_raw += h_raw
         self.n_total_signal_int += float(sig_w.sum())
@@ -591,6 +656,7 @@ class EfficiencyAccumulator:
         self.n_signal_pot *= factor
         self.n_truth_nu_pot *= factor
         self.n_total_signal_int *= factor
+        self.n_total_truth_nu_int *= factor
         self.n_at_stage_int *= factor
         return self
 
@@ -603,6 +669,7 @@ class EfficiencyAccumulator:
         self.n_truth_nu_raw += other.n_truth_nu_raw
         self.n_total_signal_int += other.n_total_signal_int
         self.n_total_signal_int_raw += other.n_total_signal_int_raw
+        self.n_total_truth_nu_int += other.n_total_truth_nu_int
         self.n_at_stage_int += other.n_at_stage_int
         self.n_at_stage_int_raw += other.n_at_stage_int_raw
         return self
@@ -677,6 +744,7 @@ class ChunkRunner:
         signal_mask_fn: Callable[[pd.DataFrame], Any],
         mc_univ_syst_tags: Optional[Tuple[str, ...]] = None,
         bar_breakdown_types: Tuple[str, ...] = ("topology", "genie"),
+        efficiency_denom_from_first_stage: bool = False,
     ):
         if sample not in {"mc", "data", "intime", "dirt", "offbeam"}:
             raise ValueError(f"unknown sample: {sample!r}")
@@ -687,6 +755,7 @@ class ChunkRunner:
         self.signal_mask_fn = signal_mask_fn
         self.mc_univ_syst_tags = mc_univ_syst_tags
         self.bar_breakdown_types = bar_breakdown_types
+        self.efficiency_denom_from_first_stage = efficiency_denom_from_first_stage
         self._first_eff_stage_key = next(
             (s.key for s in stages if s.save_for_efficiency), None
         )
@@ -752,29 +821,33 @@ class ChunkRunner:
     def _fill_efficiency(self, stage_key: str, state: Dict[str, pd.DataFrame]):
         if self.sample != "mc":
             return
-        # Denominator histograms come from ``mcnu``; numerator from reco ``evt``.
-        if state.get("mcnu") is None:
-            return
         mc_df = state.get("evt")
         if mc_df is None:
             return
         mcnu_df = state.get("mcnu")
+        # In first-stage-denom mode, mcnu is not needed for the denominator.
+        if mcnu_df is None and not self.efficiency_denom_from_first_stage:
+            return
         if stage_key not in self.eff:
             self.eff[stage_key] = {}
-        fill_mcnu = (
-            stage_key == self._first_eff_stage_key
-            and mcnu_df is not None
-            and len(mcnu_df) > 0
+        is_first = stage_key == self._first_eff_stage_key
+        fill_from_mcnu = (
+            is_first and not self.efficiency_denom_from_first_stage
+            and mcnu_df is not None and len(mcnu_df) > 0
         )
+        fill_denom_from_evt = is_first and self.efficiency_denom_from_first_stage
+        prefer_truth = self.efficiency_denom_from_first_stage
         for var_config in self.efficiency_vars:
             if var_config.var_save_name not in self.eff[stage_key]:
                 self.eff[stage_key][var_config.var_save_name] = EfficiencyAccumulator.empty(var_config)
             ea = self.eff[stage_key][var_config.var_save_name]
-            if fill_mcnu:
+            if fill_from_mcnu:
                 ea.fill_denominator_from_mcnu(mcnu_df, var_config, self.signal_mask_fn)
+            if fill_denom_from_evt and len(mc_df) > 0:
+                ea.fill_denominator_from_first_stage_evt(mc_df, var_config, self.signal_mask_fn)
             if len(mc_df) > 0:
                 sig_mask_evt = self.signal_mask_fn(mc_df)
-                ea.fill_numerator_from_evt(mc_df, var_config, sig_mask_evt)
+                ea.fill_numerator_from_evt(mc_df, var_config, sig_mask_evt, prefer_truth_col=prefer_truth)
 
     def run(
         self,
@@ -993,6 +1066,7 @@ def merge_samples(samples: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
                         ).copy(),
                         n_total_signal_int=ea.n_total_signal_int,
                         n_total_signal_int_raw=ea.n_total_signal_int_raw,
+                        n_total_truth_nu_int=getattr(ea, "n_total_truth_nu_int", 0.0),
                         n_at_stage_int=ea.n_at_stage_int,
                         n_at_stage_int_raw=getattr(ea, "n_at_stage_int_raw", 0.0),
                     )
@@ -1094,9 +1168,12 @@ def apply_global_exposure_scales(
         r = num / den
         return float(r) if np.isfinite(r) else default
 
+    # When no data sample is present (data_pot=0), keep MC at absolute event counts
+    # rather than scaling to zero. scale_dirt follows the same logic.
+    mc_scale_num = totals.data_pot if totals.data_pot > 0 else totals.mc_pot
     sm = {
-        "scale_mc": _safe_ratio(totals.data_pot, totals.mc_pot, 1.0),
-        "scale_dirt": _safe_ratio(totals.data_pot, totals.dirt_pot, 1.0),
+        "scale_mc": _safe_ratio(mc_scale_num, totals.mc_pot, 1.0),
+        "scale_dirt": _safe_ratio(mc_scale_num, totals.dirt_pot, 1.0),
     }
     gate_fac = (1.0 - f_offbeam_coincident)
     sm["scale_intime"] = _safe_ratio(

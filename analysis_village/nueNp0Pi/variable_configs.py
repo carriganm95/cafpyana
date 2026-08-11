@@ -36,10 +36,25 @@ class VariableConfig(_BaseVariableConfig):
             r"All Events", ""],
             # use slc.producer as the dummy variable
             bins=np.linspace(0., 1000., 2),
-            var_evt_reco_col=('mc', 'iscc', '', '', '', '', ''),
+            var_evt_reco_col=('rec', 'iscc', '', '', '', '', ''),
             var_evt_truth_col=('mc', 'iscc', '', '', '', '', ''),
             var_nu_col=('mc', 'iscc', ''),
             xsec_label=r"$\sigma$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right)$"
+        )
+
+    @classmethod
+    def electron_energy(cls):
+        return cls(
+            var_save_name="electron-e",
+            var_plot_name="$E_e$",
+            var_labels=[r"$\mathrm{E_e}$ [GeV]", 
+            r"$\mathrm{E_e^{reco.}}$ [GeV]", 
+            r"$\mathrm{E_e^{true}}$ [GeV]"],
+            bins=np.linspace(0.0, 3.0, 15),
+            var_evt_reco_col=('rec', 'dlp', 'ele_energy_reco_GeV', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'ele_energy_true_GeV', '', '', ''),
+            var_nu_col=('mc', 'e', 'genE'),
+            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$"
         )
 
     @classmethod
@@ -110,9 +125,9 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{P_p}$ [GeV/c]", 
             r"$\mathrm{P_p^{reco.}}$ [GeV/c]", 
             r"$\mathrm{P_p^{true}}$ [GeV/c]"],
-            bins=np.array([0.3, 0.37, 0.44, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.]),
-            var_evt_reco_col=('p', 'pfp', 'trk', 'P', 'p_proton', '', ''),
-            var_evt_truth_col=('p', 'pfp', 'trk', 'truth', 'p', 'totp', ''),
+            bins=np.linspace(0.0, 3.0, 15),
+            var_evt_reco_col=('rec', 'dlp', 'proton_p_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'proton_p_truth', '', '', '', ''),
             var_nu_col=('mc', 'p', 'totp'),
             xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
         )
@@ -131,22 +146,6 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('mc', 'p', 'dir', 'z'),
             xsec_label=r"$\frac{d\sigma}{dcos(\theta_p)}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
         )
-
-    @classmethod
-    def tki_del_p(cls):
-        return cls(
-            var_save_name="tki-del_p",
-            var_plot_name="$\\delta p$",
-            var_labels=[r"$\mathrm{\delta p}$ [GeV/c]", 
-            r"$\mathrm{\delta p^{reco.}}$ [GeV/c]", 
-            r"$\mathrm{\delta p^{true}}$ [GeV/c]"],
-            bins=np.array([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0]),
-            var_evt_reco_col=('del_p', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_p', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_p', '', '', '', '', ''),
-            var_nu_col=('del_p', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
-        )
     
     @classmethod
     def tki_del_Tp(cls):
@@ -157,43 +156,10 @@ class VariableConfig(_BaseVariableConfig):
             r"$\mathrm{\delta p_T^{reco.}}$ [GeV/c]", 
             r"$\mathrm{\delta p_T^{true}}$ [GeV/c]"],
             bins=np.array([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0]),
-            var_evt_reco_col=('del_Tp', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_Tp', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_Tp', '', '', '', '', ''),
-            var_nu_col=('del_Tp', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'del_Tp_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_Tp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
-        )
-
-    @classmethod
-    def tki_del_Tp_x(cls):
-        return cls(
-            var_save_name="tki-del_Tp_x",
-            var_plot_name="$\\delta p_T^x$",
-            var_labels=[r"$\mathrm{\delta p_{T, x}}$ [GeV/c]", 
-            r"$\mathrm{\delta p_{T, x}^{reco.}}$ [GeV/c]", 
-            r"$\mathrm{\delta p_{T, x}^{true}}$ [GeV/c]"],
-            bins=np.array([-0.7, -0.55, -0.45, -0.35, -0.25, -0.15, -0.05, 0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.7]),
-            var_evt_reco_col=('del_Tp_x', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_Tp_x', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_Tp_x', '', '', '', '', ''),
-            var_nu_col=('del_Tp_x', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta p_T^x}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
-        )
-
-    @classmethod
-    def tki_del_Tp_y(cls):
-        return cls(
-            var_save_name="tki-del_Tp_y",
-            var_plot_name="$\\delta p_T^y$",
-            var_labels=[r"$\mathrm{\delta p_{T, y}}$ [GeV/c]", 
-            r"$\mathrm{\delta p_{T, y}^{reco.}}$ [GeV/c]", 
-            r"$\mathrm{\delta p_{T, y}^{true}}$ [GeV/c]"],
-            bins=np.array([-0.9, -0.7, -0.55, -0.45, -0.35, -0.25, -0.15, -0.05, 0.05, 0.15, 0.25, 0.35, 0.45, 0.55]),
-            var_evt_reco_col=('del_Tp_y', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_Tp_y', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_Tp_y', '', '', '', '', ''),
-            var_nu_col=('del_Tp_y', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta p_T^y}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
         )
     
     @classmethod
@@ -205,10 +171,9 @@ class VariableConfig(_BaseVariableConfig):
             r"$\mathrm{\delta \alpha_T^{reco.}}$ [deg]", 
             r"$\mathrm{\delta \alpha_T^{true}}$ [deg]"],
             bins=np.array([0,25,50,75,100,120,140,160,180]),
-            var_evt_reco_col=('del_alpha', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_alpha', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_alpha', '', '', '', '', ''),
-            var_nu_col=('del_alpha', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'del_alpha_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_alpha_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_alpha_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
         )
     
@@ -221,10 +186,54 @@ class VariableConfig(_BaseVariableConfig):
             r"$\mathrm{\delta \phi_T^{reco.}}$ [deg]", 
             r"$\mathrm{\delta \phi_T^{true}}$ [deg]"],
             bins=np.array([0,10,20,30,40,55,70,90,110,130,150,180]),
-            var_evt_reco_col=('del_phi', '', '', '', '', '', ''),
-            # var_evt_truth_col=('mc_del_phi', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc', 'del_phi', '', '', '', '', ''),
-            var_nu_col=('del_phi', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'del_phi_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_phi_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_phi_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
+        )
+
+    @classmethod
+    def tki_del_Tp_lp(cls):
+        return cls(
+            var_save_name="tki-del_Tp_lp",
+            var_plot_name="$\\delta p_T l-p$",
+            var_labels=[r"$\mathrm{\delta p_T}$ l-p [GeV/c]", 
+            r"$\mathrm{\delta p_T^{reco.}}$ l-p [GeV/c]", 
+            r"$\mathrm{\delta p_T^{true}}$ l-p [GeV/c]"],
+            bins=np.array([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0]),
+            var_evt_reco_col=('rec', 'dlp', 'del_Tp_lp_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
+        )
+    
+    @classmethod
+    def tki_del_alpha_lp(cls):
+        return cls(
+            var_save_name="tki-del_alpha_lp",
+            var_plot_name="$\\delta \\alpha_T l-p$",
+            var_labels=[r"$\mathrm{\delta \alpha_T}$ l-p [deg]", 
+            r"$\mathrm{\delta \alpha_T^{reco.}}$ l-p [deg]", 
+            r"$\mathrm{\delta \alpha_T^{true}}$ l-p [deg]"],
+            bins=np.array([0,25,50,75,100,120,140,160,180]),
+            var_evt_reco_col=('rec', 'dlp', 'del_alpha_lp_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_alpha_lp_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_alpha_lp_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
+        )
+    
+    @classmethod
+    def tki_del_phi_lp(cls):
+        return cls(
+            var_save_name="tki-del_phi_lp",
+            var_plot_name="$\\delta \\phi_T l-p$",
+            var_labels=[r"$\mathrm{\delta \phi_T}$ l-p [deg]", 
+            r"$\mathrm{\delta \phi_T^{reco.}}$ l-p [deg]", 
+            r"$\mathrm{\delta \phi_T^{true}}$ l-p [deg]"],
+            bins=np.array([0,10,20,30,40,55,70,90,110,130,150,180]),
+            var_evt_reco_col=('rec', 'dlp', 'del_phi_lp_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'del_phi_lp_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'del_phi_lp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
         )
 
@@ -1114,9 +1123,6 @@ var_configs_measurement = [
                 VariableConfig.tki_del_alpha(),
                 VariableConfig.tki_del_phi(),
                 VariableConfig.tki_del_Tp(),
-                VariableConfig.tki_del_p(),
-                VariableConfig.tki_del_Tp_x(),
-                VariableConfig.tki_del_Tp_y(),
                 ]
 
 var_configs_extra_finalstate = [

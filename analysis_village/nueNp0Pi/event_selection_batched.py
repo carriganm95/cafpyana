@@ -36,7 +36,7 @@ from analysis_village.nueNp0Pi.dataset_locations import (
 from pyanalib.syst_disk_layout import SYST_DISK_ENV
 
 SAMPLES: Tuple[str, ...] = ("mc",) #, "data", "intime", "offbeam", "dirt")
-_SCRIPTS_DIR = Path(__file__).resolve().parent / "scripts"
+_SCRIPTS_DIR = Path(__file__).resolve().parent / '.'
 _MAP_SCRIPT = _SCRIPTS_DIR / "event_selection_batch_map.py"
 _AGG_SCRIPT = _SCRIPTS_DIR / "event_selection_aggregate.py"
 
@@ -384,9 +384,9 @@ def run_aggregate(cfg: EventSelectionBatchedConfig, batches_dir: Path | str | No
     )
     print(f"[batched] applied global scales: {exposure_scales}", flush=True)
 
-    data_pot = totals.data_pot if totals.data_pot > 0 else 1.0
+    data_pot = totals.data_pot if totals.data_pot > 0 else totals.mc_pot
     pot_str = agg.get_pot_str(data_pot)
-    print(f"[batched] data_pot={data_pot:.3e} -> POT label={pot_str}", flush=True)
+    print(f"[batched] {'data' if totals.data_pot > 0 else 'mc'}_pot={data_pot:.3e} -> POT label={pot_str}", flush=True)
 
     syst_disk_arg = str(syst_root) if syst_root.is_dir() else None
     print(f"[batched] systematics disk root: {syst_disk_arg}", flush=True)
@@ -414,12 +414,27 @@ def run_aggregate(cfg: EventSelectionBatchedConfig, batches_dir: Path | str | No
         save_fig=cfg.save_fig,
         show_fig=cfg.show_fig,
     )
+    agg.render_cutflow_table(
+        merged,
+        str(plots_dir),
+        pot_str,
+        save_fig=cfg.save_fig,
+        show_fig=cfg.show_fig,
+    )
+    agg.render_breakdown_table(
+        merged,
+        str(plots_dir),
+        pot_str,
+        save_fig=cfg.save_fig,
+        show_fig=cfg.show_fig,
+    )
 
+    from dataclasses import asdict as _asdict
     merged_payload = {
         "merged": merged,
         "data_pot": data_pot,
         "pot_str": pot_str,
-        "exposure_totals": totals,
+        "exposure_totals": _asdict(totals),
         "exposure_scales": exposure_scales,
         "cosmic_estimate": cfg.cosmic_estimate,
         "f_offbeam_frac": cfg.f_offbeam_frac,

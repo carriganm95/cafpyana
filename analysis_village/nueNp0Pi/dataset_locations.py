@@ -62,7 +62,7 @@ FLUX_FILE = os.environ.get(
 SPRING_GEN1_ROOT = Path(
     os.environ.get(
         "NUMUCC_SPRING_GEN1_ROOT",
-        "/pnfs/sbnd/scratch/users/micarrig/cafpyana_out/dfs",
+        "/exp/sbnd/data/users/micarrig/nueNp0Pi/",
     )
 )
 
@@ -92,7 +92,7 @@ EVENT_SELECTION_GLOBS: Dict[str, str] = {
     # (SPRING_GEN1_ROOT / "/pnfs/..."), which pathlib silently resolves to just the
     # absolute right-hand side -- so overriding NUMUCC_SPRING_GEN1_ROOT had no effect
     # on this glob. Made relative so it actually composes with SPRING_GEN1_ROOT.
-    "mc": str(SPRING_GEN1_ROOT / "2026_08_04_142220__output_v1/*.df"),
+    "mc": str(SPRING_GEN1_ROOT / "selection_test/*.df"),
     # "data": str(SPRING_GEN1_ROOT / "2026_05_16_230859__sel_all-data-1e20/*.df"),
     # "intime": str(SPRING_GEN1_ROOT / "2026_05_11_040132__sel_all-mc-Intime/*.df"),
     # "offbeam": str(SPRING_GEN1_ROOT / "2026_05_11_035756__sel_all-data-OffBeamLight/*.df"),

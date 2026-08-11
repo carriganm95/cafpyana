@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import sys
 
 def mag(x, y, z):
@@ -29,7 +30,7 @@ def InAV(df,det="SBND"):
         zmax = 495
     return (df.x > xmin) & (df.x < xmax) & (df.y > ymin) & (df.y < ymax) & (df.z > zmin) & (df.z < zmax)
 
-def InFV(df, inzback, inx=10, iny=10, inzfront=10, det="ICARUS"):
+def InFV(df, inzback=10, inx=10, iny=10, inzfront=10, incathode=5, det="ICARUS"):
     if det == "ICARUS":
         xmin_C0 = -358.49
         xmax_C0 = -61.94
@@ -75,6 +76,27 @@ def InFV(df, inzback, inx=10, iny=10, inzfront=10, det="ICARUS"):
         pass_y = ((df.z < 250) & (np.abs(df.y) < 190.)) | ((df.z > 250) & (df.y > -190.) & (df.y < ymax_highz))
         return pass_xz & pass_y
 
+    elif det == "SBND_TPC1":
+        xmin_tpc1 = -190.
+        xmax_tpc1 = -1 * incathode
+        return (df.x > xmin_tpc1) & (df.x < xmax_tpc1)
+
+    elif det == "SBND_TPC2":
+        xmin_tpc2 = incathode
+        xmax_tpc2 = 190.
+        return (df.x > xmin_tpc2) & (df.x < xmax_tpc2)
+
+    elif det == "SBND_Gen1":
+        xmin = 10.
+        xmax = 190.
+        zmin = 10.
+        zmax = 450.
+        ymax_highz = 100.
+        pass_xz = (np.abs(df.x) > xmin) &(np.abs(df.x) < xmax) & (df.z > zmin) & (df.z < zmax)
+        pass_y = ((df.z < 250) & (np.abs(df.y) < 190.)) | ((df.z > 250) & (df.y > -190.) & (df.y < ymax_highz))
+        return pass_xz & pass_y
+
+
     else:
         raise NameError("DETECTOR not valid, should be SBND or ICARUS")
 
@@ -85,3 +107,32 @@ def SlcInFV(df):
     return InFV(df, 100.)
 
 
+def match_trkdf_to_slcdf(trkdf, slcdf):
+    # trkdf: df to match
+    # slcdf: df to match to
+    nlevels = len(trkdf.index.names)
+    common_idx = trkdf.reset_index(level=[nlevels-1]).index.intersection(slcdf.index)
+    matched_trkdf = trkdf.reset_index(level=[nlevels-1]).loc[common_idx].reset_index().set_index(trkdf.index.names)
+    return matched_trkdf
+
+
+def avg_chi2(df, var_name):
+    planes = ['I0', 'I1', 'I2']
+    chi2_vals = []
+    for plane in planes:
+        chi2 = df['pfp']['trk']['chi2pid'][plane][var_name]
+        chi2_vals.append(chi2)
+    chi2_df = pd.concat(chi2_vals, axis=1)
+
+    chi2_df = chi2_df.replace(0, np.nan)
+    avg = chi2_df.mean(axis=1, skipna=True)
+    return avg
+
+
+def p_to_KE(p, mass):
+    return np.sqrt(p**2 + mass**2) - mass
+
+
+def KE_to_p(KE, mass):
+    E = KE + mass
+    return np.sqrt(E**2 - mass**2)

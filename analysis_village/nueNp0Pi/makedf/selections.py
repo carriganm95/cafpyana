@@ -27,6 +27,46 @@ MU_PHI_TH     = 1
 P_PLO_TH      = 0.3
 P_PHI_TH      = 1
 
+def fiducial_volume(df):
+    return df[df.rec.dlp.is_fiducial == 1]
+
+def contained(df):
+    return df[df.rec.dlp.is_contained == 1]
+
+def flash_matched(df):
+    return df[df.rec.dlp.is_flash_matched == 1]
+
+def no_muons(df):
+    return df[df.rec.dlp.muon_mask_reco == 0]
+
+def no_pions(df):
+    return df[df.rec.dlp.pion_mask_reco == 0]
+
+def no_photons(df):
+    return df[df.rec.dlp.photon_mask_reco == 0]
+
+def good_electron(df):
+    return df[df.rec.dlp.ele_mask_reco == 1]
+
+def good_proton(df):
+    return df[df.rec.dlp.proton_mask_reco == 1]
+
+def electron_softmax(df):
+    return df[df.rec.dlp.ele_softmax_reco > 0.9]
+
+def electron_primary(df):
+    return df[df.rec.dlp.ele_primary_reco > 0.99]
+
+def proton_softmax(df):
+    return df[df.rec.dlp.proton_softmax_reco > 0.75]
+
+def electron_vertex_distance(df):
+    return df[df.rec.dlp.ele_vertex_distance_reco < 3.5]
+
+def electron_dedx(df):
+    return df[df.rec.dlp.ele_dedx_reco < 4]
+
+
 
 def cut_clear_cosmic(df):
     return df[df.slc.is_clear_cosmic == 0]

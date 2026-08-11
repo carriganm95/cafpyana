@@ -90,7 +90,8 @@ from analysis_village.nueNp0Pi.categories import (
     get_topo_category, get_genie_category, get_genie_sb_category, get_pdg_category,
     topology_labels, genie_mode_labels, genie_sb_mode_labels,
     pdg_labels,
-    IsNuInFV_NumuCC_1p0pi, DETECTOR,
+    IsNuInFV_NumuCC_1p0pi, DETECTOR, get_topo_category_nueNp0Pi, get_genie_category_spine, get_pdg_category_spine,
+    IsNuInFV_NueCC_1p0pi, IsNuInFV
 )
 
 # ---------------------------------------------------------------------------
@@ -102,16 +103,60 @@ from analysis_village.nueNp0Pi.categories import (
 #     order overlay_hists / overlay_hists_from_histdata expect for stacking.
 # ---------------------------------------------------------------------------
 BREAKDOWN_REGISTRY: Dict[str, Tuple[int, Any]] = {
-    "topology": (len(topology_labels), get_topo_category),
-    "genie":    (len(genie_mode_labels), get_genie_category),
-    "genie_sb": (len(genie_sb_mode_labels), get_genie_sb_category),
-    "pdg":      (len(pdg_labels), get_pdg_category),
+    "topology": (len(topology_labels), get_topo_category_nueNp0Pi),
+    "genie":    (len(genie_mode_labels), get_genie_category_spine),
+    # "genie_sb": (len(genie_sb_mode_labels), get_genie_sb_category),
+    "pdg":      (len(pdg_labels), get_pdg_category_spine),
 }
 
 
+# DLP truth signal keys — present in evt_df, absent in mcnu_df.
+_DLP_SIGNAL1P_KEY = ('rec', 'dlp_true', 'true_signal1p', '', '')
+_DLP_SIGNAL_NP_KEY = ('rec', 'dlp_true', 'true_signalNp', '', '')
+
+
+def _mcnu_signal_mask_dlp_phase_space(df):
+    """GENIE-level approximation of DLP true_signal1p|true_signalNp phase space.
+
+    NueCC in FV with ≥1 primary electron (no KE threshold — DLP accepts electrons
+    below 500 MeV), ≥1 proton KE>40 MeV, and no pions/muons/photons above threshold.
+    Gives ~283 events per file vs ~160 DLP truth events (~57% DLP reco efficiency).
+
+    To use all nue CC in FV as denominator instead (~484/file), replace with:
+        IsNuInFV(df) & (df.mc.iscc == 1) & (df.mc.pdg.abs() == 12)
+    """
+    ne_key = multicol_resolve_column_key(df, ("mc", "ne", ""))
+    np_key = multicol_resolve_column_key(df, ("mc", "np_40MeV", ""))
+    npi_key = multicol_resolve_column_key(df, ("mc", "npi_25MeV", ""))
+    nmu_key = multicol_resolve_column_key(df, ("mc", "nmu_25MeV", ""))
+    ng_key = multicol_resolve_column_key(df, ("mc", "ng_100MeV", ""))
+    if any(k is None for k in (ne_key, np_key, npi_key, nmu_key, ng_key)):
+        return IsNuInFV(df) & (df.mc.iscc == 1) & (df.mc.pdg.abs() == 12)
+    return (
+        IsNuInFV(df)
+        & (df.mc.iscc == 1)
+        & (df.mc.pdg.abs() == 12)
+        & (df.loc[:, ne_key] >= 1)
+        & (df.loc[:, np_key] >= 1)
+        & (df.loc[:, npi_key] == 0)
+        & (df.loc[:, nmu_key] == 0)
+        & (df.loc[:, ng_key] == 0)
+    )
+
+
 def SIGNAL_MASK_FN(df):
-    """numuCC CC 1p0pi-in-FV truth-signal definition used by efficiency accumulators."""
-    return IsNuInFV_NumuCC_1p0pi(df, detector=DETECTOR)
+    """Signal mask dispatching on truth source.
+
+    evt_df:  true_signal1p | true_signalNp (DLP particle-level truth matching).
+    mcnu_df: GENIE nue CC in FV with DLP-compatible topology cuts (no electron
+             KE threshold; proton KE>40 MeV; no pi/mu/gamma above threshold).
+    """
+    if _DLP_SIGNAL1P_KEY in df.columns:
+        mask = df[_DLP_SIGNAL1P_KEY] == 1
+        if _DLP_SIGNAL_NP_KEY in df.columns:
+            mask = mask | (df[_DLP_SIGNAL_NP_KEY] == 1)
+        return mask
+    return _mcnu_signal_mask_dlp_phase_space(df)
 
 
 class ChunkRunner(_BaseChunkRunner):
@@ -135,6 +180,7 @@ class ChunkRunner(_BaseChunkRunner):
         breakdown_registry=None,
         signal_mask_fn=None,
         bar_breakdown_types=("topology", "genie"),
+        efficiency_denom_from_first_stage=True,
     ):
         super().__init__(
             sample=sample,
@@ -144,4 +190,5 @@ class ChunkRunner(_BaseChunkRunner):
             signal_mask_fn=signal_mask_fn or SIGNAL_MASK_FN,
             mc_univ_syst_tags=mc_univ_syst_tags,
             bar_breakdown_types=bar_breakdown_types,
+            efficiency_denom_from_first_stage=efficiency_denom_from_first_stage,
         )

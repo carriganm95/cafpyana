@@ -5,6 +5,9 @@ from .util import *
 from .calo import *
 from . import numisyst, g4syst, geniesyst, bnbsyst, getenv
 from makedf import chi2pid
+from pyanalib.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 pd.set_option('future.no_silent_downcasting', True)
 
@@ -389,6 +392,7 @@ def make_mcdf(f, branches=mcbranches, primbranches=mcprimbranches):
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==2112).groupby(level=[0,1]).sum().rename("nn"))
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==2212).groupby(level=[0,1]).sum().rename("np"))
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==13).groupby(level=[0,1]).sum().rename("nmu"))
+    mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==11).groupby(level=[0,1]).sum().rename("ne"))
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==211).groupby(level=[0,1]).sum().rename("npi"))
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==111).groupby(level=[0,1]).sum().rename("npi0"))
     mcdf = multicol_add(mcdf, (np.abs(mcprimdf.pdg)==22).groupby(level=[0,1]).sum().rename("ng"))
@@ -402,6 +406,8 @@ def make_mcdf(f, branches=mcbranches, primbranches=mcprimbranches):
         this_KE = mcprimdf[np.abs(mcprimdf.pdg)==PDG[particle][0]].genE - PDG[particle][2]
         mcdf = multicol_add(mcdf, ((np.abs(mcprimdf.pdg)==PDG[particle][0]) & (this_KE > threshold)).groupby(level=[0,1]).sum().rename(identifier))
  
+    logger.debug("adding generator energies for: muon, proton, electron, charged pion")
+
     # muon info
     mudf = mcprimdf[np.abs(mcprimdf.pdg)==13].sort_values(mcprimdf.index.names[:2] + [("genE", "")]).groupby(level=[0,1]).last()
     mudf.columns = pd.MultiIndex.from_tuples([tuple(["mu"] + list(c)) for c in mudf.columns])
@@ -873,3 +879,45 @@ def make_spine_flash_df(f):
     spine_flash_df = reduce(lambda l, r: l.join(r, how='outer'), dfs)
 
     return spine_flash_df
+
+def truth_match(this_evtdf, this_mcdf):
+    # ---- truth match ----
+    bad_tmatch = np.invert(this_evtdf.slc.tmatch.eff > 0.5) & (this_evtdf.slc.tmatch.idx >= 0)
+    # this_evtdf.loc[bad_tmatch, ("slc","tmatch","idx", "", "", "", "")] = np.nan
+    this_evtdf.loc[bad_tmatch, pad_column_name(("slc","tmatch","idx"), this_evtdf)] = np.nan
+
+    nlevels = this_evtdf.columns.nlevels
+
+    this_mcdf.columns = pd.MultiIndex.from_tuples([tuple(["mc"] + list(c) +[""] * (nlevels-len(c)-1)) for c in this_mcdf.columns])     # match # of column levels
+    df = multicol_merge(this_evtdf.reset_index(), 
+                this_mcdf.reset_index(),
+                left_on=[("entry", "", "",), 
+                        ("slc", "tmatch", "idx")], 
+                right_on=[("entry", "", ""), 
+                            ("rec.mc.nu..index", "", "")], 
+                how="left"
+                ) 
+
+    df = df.set_index(this_evtdf.index.names, verify_integrity=True) 
+    return df
+
+def truth_match_spine(this_evtdf, this_mcdf):
+    # ---- truth match ----
+    col = pad_column_name(("rec", "dlp", "is_matched"), this_evtdf)
+    bad_tmatch = (this_evtdf[col] != 1)
+    this_evtdf.loc[bad_tmatch, col] = np.nan
+
+    nlevels = this_evtdf.columns.nlevels
+
+    this_mcdf.columns = pd.MultiIndex.from_tuples([tuple(["mc"] + list(c) +[""] * (nlevels-len(c)-1)) for c in this_mcdf.columns])     # match # of column levels
+    df = multicol_merge(this_evtdf.reset_index(), 
+                this_mcdf.reset_index(),
+                left_on=[("entry", "", "",), 
+                        ("rec", "dlp", "id")], 
+                right_on=[("entry", "", ""), 
+                            ("rec.mc.nu..index", "", "")], 
+                how="left"
+                ) 
+
+    df = df.set_index(this_evtdf.index.names, verify_integrity=True) 
+    return df

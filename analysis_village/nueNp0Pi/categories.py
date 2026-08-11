@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-import sys
-sys.path.append('../../')
+import sys, os as _os
+sys.path.append(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from makedf.util import *
 
 
@@ -42,24 +42,29 @@ def IsTruthCC1p0piPerTPCFV(df, incathode=PER_TPC_INCATHODE_CM):
     """
     in_tpc1 = (
         InFV(df.mc.position, det="SBND_TPC1", incathode=incathode)
-        & InFV(df.mc.mu.end, det="SBND_TPC1", incathode=incathode)
+        & InFV(df.mc.e.end, det="SBND_TPC1", incathode=incathode)
         & InFV(df.mc.p.end, det="SBND_TPC1", incathode=incathode)
     )
     in_tpc2 = (
         InFV(df.mc.position, det="SBND_TPC2", incathode=incathode)
-        & InFV(df.mc.mu.end, det="SBND_TPC2", incathode=incathode)
+        & InFV(df.mc.e.end, det="SBND_TPC2", incathode=incathode)
         & InFV(df.mc.p.end, det="SBND_TPC2", incathode=incathode)
     )
     return in_tpc1 | in_tpc2
 
-
 def IsTruthCC1p0piNominalFV(df, detector=DETECTOR):
     """Truth fiducial aligned with nominal ``SBND_nohighyz`` (μ/p start and end in volume)."""
     return (
-        InFV(df.mc.mu.start, det=detector)
+        InFV(df.mc.e.start, det=detector)
         & InFV(df.mc.p.start, det=detector)
-        & InFV(df.mc.mu.end, det=detector)
+        & InFV(df.mc.e.end, det=detector)
         & InFV(df.mc.p.end, det=detector)
+    )
+
+def IsTruthCC1p0piFVSpine(df, detector=DETECTOR):
+    """Fiducial volume selection directly from SPINE definition"""
+    return (
+        df.rec.dlp_true.is_fiducial
     )
 
 
@@ -104,6 +109,10 @@ def IsNuInFV_NumuCC_Np0pi(df):
 def IsNuInFV_NumuCC_1p0pi(df, detector=DETECTOR, signal_truth_fv="per_tpc"):
     return IsNuInFV(df) & (df.mc.pdg == 14) & (df.mc.iscc == 1) &\
               Is_1p0pi(df, detector=detector, signal_truth_fv=signal_truth_fv)
+
+def IsNuInFV_NueCC_1p0pi(df, detector=DETECTOR, signal_truth_fv="per_tpc"):
+    return IsNuInFV(df) & (df.mc.pdg == 12) & (df.mc.iscc == 1) &\
+              IsNueNp0pi(df, detector=detector, signal_truth_fv=signal_truth_fv)
 
 # --- numu CC in FV, breakdown in interaction mode (GENIE)
 def IsNuInFV_NumuCC_QE(df):
@@ -175,6 +184,30 @@ def Is1muNcpi(df): # definition
     is_1mu1p0pi = (df.mc.nmu_220MeVc == 1) & (df.mc.npi_70MeVc > 0) & (df.mc.npi0 == 0) #& (df.mu.genE > 0.25) # & (df.np_20MeVc == 1) : add with stubs
     return is_fv & is_1mu1p0pi
 
+def IsNueNp0pi(df, detector=DETECTOR, signal_truth_fv="none"): # definition    
+    """True CC 1p0π topology with configurable truth fiducial.
+
+    signal_truth_fv : {'per_tpc', 'nominal', 'none'}
+        ``per_tpc`` — ``IsTruthCC1p0piPerTPCFV`` (matches per-TPC reco selection).
+        ``nominal`` — μ/p start and end in ``detector`` (default ``SBND_nohighyz``).
+        ``none`` — topology only, no μ/p end containment requirement.
+    """
+    topo = (
+        (df.mc.ne_500MeV == 1)
+        & (df.mc.np_40MeV == 1)
+        & (df.mc.npi_25MeV == 0)
+        & (df.mc.nmu_25MeV == 0)
+        & (df.mc.ng_100MeV == 0)
+    )
+    if signal_truth_fv == "per_tpc":
+        return topo & IsTruthCC1p0piPerTPCFV(df)
+    if signal_truth_fv == "nominal":
+        return topo & IsTruthCC1p0piNominalFV(df, detector=detector)
+    if signal_truth_fv == "none":
+        return topo
+    raise ValueError(
+        f"signal_truth_fv must be 'per_tpc', 'nominal', or 'none', got {signal_truth_fv!r}"
+    )                                                                                                                                                                                                                                                            
 
 # ==== functions to get breadkdowns of event categories ====
 def get_nu_cosmics_category(df, ret_cuts=False, print_summary=False):
@@ -195,9 +228,18 @@ def get_pdg_category(df, ret_cuts=False, print_summary=False):
     cuts = [cut_muon, cut_proton, cut_pion, cut_other]
     return cuts[::-1]
 
-pdg_labels = [r"$\mu^{\pm}$", r"$p$", r"$\pi^{\pm}$", r"Other"]
-pdg_colors = ["C0", "C1", "C2", "C3"]
+pdg_labels = [r"$e^{\pm}$", r"$\gamma$", r"$\mu^{\pm}$", r"$p$", r"$\pi^{\pm}$", r"Other"]
+pdg_colors = ["C0", "C1", "C2", "C3", "C4", "C5"]
 
+def get_pdg_category_spine(df):
+    cut_ele = (np.abs(df.rec.dlp_true.particles.pdg_code) == 11)
+    cut_photon = (df.rec.dlp_true.particles.pdg_code == 22)
+    cut_muon = (np.abs(df.rec.dlp_true.particles.pdg_code) == 13)
+    cut_proton = (df.rec.dlp_true.particles.pdg_code == 2212)
+    cut_pion = (np.abs(df.rec.dlp_true.particles.pdg_code) == 211)
+    cut_other = (~cut_ele & ~cut_photon & ~cut_muon & ~cut_proton & ~cut_pion)
+    cuts = [cut_ele, cut_photon, cut_muon, cut_proton, cut_pion, cut_other]
+    return cuts[::-1]
 
 def get_topo_category(
     df,
@@ -243,6 +285,57 @@ def get_topo_category(
 
     return nuint_categ
 
+def get_topo_category_nueNp0Pi(df, ret_cuts=False, print_summary=False, detector=DETECTOR, signal_truth_fv="per_tpc"):
+
+    all_flags = (
+        df.rec.dlp_true.true_signal1p +
+        df.rec.dlp_true.true_signalNp +
+        df.rec.dlp_true.bkgd_oofv +
+        df.rec.dlp_true.bkgd_oops +
+        df.rec.dlp_true.bkgd_pi +
+        df.rec.dlp_true.bkgd_mu +
+        df.rec.dlp_true.bkgd_photon +
+        df.rec.dlp_true.bkgd_nueOther +
+        df.rec.dlp_true.bkgd_numu +
+        df.rec.dlp_true.bkgd_nc +
+        df.rec.dlp_true.bkgd_other
+    )
+    assert (all_flags != 1).sum() == 0, f"{(all_flags != 1).sum()} rows have overlapping or missing categories"
+
+    nuint_categ = pd.Series(10, index=df.index)
+    nuint_categ[df.rec.dlp_true.true_signal1p == 1] = 0
+    nuint_categ[df.rec.dlp_true.true_signalNp == 1] = 1
+    nuint_categ[df.rec.dlp_true.bkgd_oofv == 1] = 2
+    nuint_categ[df.rec.dlp_true.bkgd_oops == 1] = 3
+    nuint_categ[df.rec.dlp_true.bkgd_pi == 1] = 4
+    nuint_categ[df.rec.dlp_true.bkgd_mu == 1] = 5
+    nuint_categ[df.rec.dlp_true.bkgd_photon == 1] = 6
+    nuint_categ[df.rec.dlp_true.bkgd_nueOther == 1] = 7
+    nuint_categ[df.rec.dlp_true.bkgd_numu == 1] = 8
+    nuint_categ[df.rec.dlp_true.bkgd_nc == 1] = 9
+    nuint_categ[df.rec.dlp_true.bkgd_other == 1] = 10
+
+    if print_summary:
+        print(nuint_categ.value_counts())
+
+    if ret_cuts:
+        return [
+            df.rec.dlp_true.true_signal1p == 1,   # 0
+            df.rec.dlp_true.true_signalNp == 1,    # 1
+            df.rec.dlp_true.bkgd_oofv == 1,        # 2
+            df.rec.dlp_true.bkgd_oops == 1,        # 3
+            df.rec.dlp_true.bkgd_pi == 1,          # 4
+            df.rec.dlp_true.bkgd_mu == 1,          # 5
+            df.rec.dlp_true.bkgd_photon == 1,      # 6
+            df.rec.dlp_true.bkgd_nueOther == 1,    # 7
+            df.rec.dlp_true.bkgd_numu == 1,        # 8
+            df.rec.dlp_true.bkgd_nc == 1,          # 9
+            df.rec.dlp_true.bkgd_other == 1,       # 10
+        ]
+
+    return nuint_categ
+
+
 
 def get_genie_category(df, ret_cuts=False, print_summary=False):
     cut_cosmic = IsCosmic(df)
@@ -286,6 +379,37 @@ def get_genie_category(df, ret_cuts=False, print_summary=False):
 
     return genie_categ
 
+def get_genie_category_spine(df, ret_cuts=False, print_summary=False):
+
+    mode = df.rec.dlp_true.interaction_mode
+    iscc = df.rec.dlp_true.cc_mask == True
+    isnu = df.rec.dlp_true.nu_id >= 0
+
+    good_nu = isnu & iscc
+
+    genie_categ = pd.Series(10, index=df.index)
+    genie_categ[good_nu & (mode == 0)] = 0  # QE
+    genie_categ[good_nu & (mode == 1)] = 1  # RES
+    genie_categ[good_nu & (mode == 2)] = 2  # DIS
+    genie_categ[good_nu & (mode == 10)] = 3  # MEC
+    genie_categ[good_nu & ((mode != 0) & (mode != 1) & (mode != 2) & (mode != 10))] = 4  # Other
+    genie_categ[isnu & ~iscc] = -1
+    genie_categ[~isnu] = -2
+
+    if ret_cuts:
+        cc_other = good_nu & ~(mode == 0) & ~(mode == 1) & ~(mode == 2) & ~(mode == 10)
+        return [
+            good_nu & (mode == 0),   # 0: QE
+            good_nu & (mode == 1),   # 1: RES
+            good_nu & (mode == 2),   # 2: DIS
+            good_nu & (mode == 10),  # 3: MEC
+            cc_other,                # 4: Other CC
+            isnu & ~iscc,            # 5: NC
+            ~isnu,                   # 6: Cosmic
+        ]
+
+    return genie_categ
+
 def get_genie_sb_category(df, ret_cuts=False, print_summary=False, detector=DETECTOR):
     cut_cosmic = IsCosmic(df)
     cut_nu_other = (IsNuOutFV(df) | IsNuInFV_NuOther(df))
@@ -326,35 +450,53 @@ nu_cosmics_colors = ["gray", "C0", "C1"]
 
 # signal / backgroundtopology breakdown
 # the signal mode code MUST be the first item in the list for all the code below to work
-topology_list = [1, # signal
-                 2, 3, 4, #5, 
-                 0,
-                 -1 # cosmic
-                 ]
-topology_labels = [r"$\nu_{\mu}$ CC 1p0$\pi$", 
-                    r"$\nu_{\mu}$ CC Np0$\pi$", r"$\nu_{\mu}$ CC Other", r"$\nu$ NC",  #r"Other $\nu$", 
-                    r"Other $\nu$", 
-                    "Cosmic"]
-topology_colors = ["mediumslateblue", 
-                    "darkslateblue", "coral", 
-                    "darkgreen", 
-                    "crimson", 
-                    # "sienna", 
-                    "gray"] 
+topology_list = [0, 1, 2, 3, 4, 5,
+                6, 7, 8, 9, 10]
+
+topology_labels = [r'$\nu_e$ CC 1p0$\pi$',
+                    r'$\nu_e$ CC Np0$\pi$', 
+                    r'$\nu_e$ CC OOPS',
+                    r'$\nu_e$ CC OOFV',
+                    r'$\nu_e$ CC $\pi^{\pm}$',
+                    r'$\nu_e$ CC $\mu^{\pm}$',
+                    r'$\nu_e$ CC $\gamma$',
+                    r'$\nu_e$ CC Other',
+                    r'$\nu_{\mu}$ CC',
+                    r'NC',
+                    r'Other']
+
+topology_colors = ['#00082E', 
+                    '#001261', 
+                    '#033E7D', 
+                    '#1E6F9D', 
+                    '#71A8C4', 
+                    '#C9DDE7', 
+                    '#EACEBD', 
+                    '#D39774', 
+                    '#BE6533', 
+                    '#8B2706', 
+                    '#590008', 
+                    '#000000'] 
 
 # --- GENIE interaction mode breakdown ---
-genie_mode_list = [1, # CCQE
-                #    2, 3, 4, 5, 6, 7, 
-                   2, 3, 5, 6, #7, 
-                   0,
-                   -1   # cosmic
+genie_mode_list = [0, # CCQE
+                   1, # CCRES 
+                   2, # CCDIS
+                   3, # CCMEC
+                   4, # CC Other
+                   -1, # NC
+                   -2  # Cosmic
                    ]
 # genie_mode_labels = [r'$\nu_{\mu}$ CC QE', r'$\nu_{\mu}$ CC MEC', r'$\nu_{\mu}$ CC RES', r'$\nu_{\mu}$ CC SIS/DIS', r'$\nu_{\mu}$ CC Other', 
-genie_mode_labels = [r'$\nu_{\mu}$ CC QE', r'$\nu_{\mu}$ CC MEC', r'$\nu_{\mu}$ CC RES', r'$\nu_{\mu}$ CC Other', 
-                     r"$\nu$ NC", 
-                     r"Other $\nu$", 
-                    #  r"Out-FV $\nu$", 
-                     "Cosmic"]
+genie_mode_labels = [ r'$\nu_e$ CC QE',
+                        r'$\nu_e$ CC RES',
+                        r'$\nu_e$ CC DIS', 
+                        r'$\nu_e$ CC MEC', 
+                        r'$\nu_e$ CC Other', 
+                        r"$\nu$ NC", 
+                        "Cosmic"]
+
+
 # genie_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B", "#BFB17C", 
 genie_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B", 
                      "darkgreen", 
@@ -396,12 +538,12 @@ def get_category_cuts(breakdown_type, df, ret_cuts=False):
     elif breakdown_type == "topology":
         labels = topology_labels[::-1]
         colors = topology_colors[::-1]
-        cuts = get_topo_category(df, ret_cuts=ret_cuts)
+        cuts = get_topo_category_nueNp0Pi(df, ret_cuts=ret_cuts)
 
     elif breakdown_type == "genie":
         labels = genie_mode_labels[::-1]
         colors = genie_mode_colors[::-1]
-        cuts = get_genie_category(df, ret_cuts=ret_cuts)
+        cuts = get_genie_category_spine(df, ret_cuts=ret_cuts)
     
     # TODO: GiBUU breakdown
 

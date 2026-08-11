@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 ENV_VAR = "CAFPYANA_LOG_LEVEL"
 DEFAULT_LEVEL = "WARNING"

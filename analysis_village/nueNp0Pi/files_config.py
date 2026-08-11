@@ -8,13 +8,15 @@ from analysis_village.nueNp0Pi.utils import *
 
 
 # ==== save configs ====
-save_fig_base_dir = "/exp/sbnd/data/users/munjung/plots/numucc1p0pi"
+save_fig_base_dir = "/exp/sbnd/data/users/micarrig/plots/nueNp0Pi"
 
 
 # ==== Spring Gen 1 samples, besides detvar samples ====
-file_dir = "/exp/sbnd/data/users/munjung/xsec/2025Spring_v10_06_00_09"
+file_dir = "/exp/sbnd/data/users/micarrig/xsec/2025Spring_v10_06_00_09"
 
 n_max_concat = 999
+
+KEYS2LOAD = ["evt", "trk","hdr"]
 
 
 def get_ana_dfs(option="", syst_tag="", systs_mc_df_tag="", systs_chunk_tags=None):
