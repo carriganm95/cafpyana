@@ -277,9 +277,9 @@ def get_lp_open_angle_spine(particles, lepton_idx, proton_idx, int_levels):
     pro_mask = part_idx == proton_idx
 
     lep_start_dir = particles.start_dir.where(lep_mask).groupby(level=int_levels).first()
-    pro_start_dir = particles.start_dir.where(pro_mask).groupby(level=int_levels).first
+    pro_start_dir = particles.start_dir.where(pro_mask).groupby(level=int_levels).first()
 
-    return np.arccos(lep_start_dir[0] * pro_start_dir[0] + lep_start_dir[1] * pro_start_dir[1] + lep_start_dir[2] * pro_start_dir[2]);
+    return np.arccos(np.clip(lep_start_dir['x'] * pro_start_dir['x'] + lep_start_dir['y'] * pro_start_dir['y'] + lep_start_dir['z'] * pro_start_dir['z'], -1, 1))
 
 def get_lepton_beam_angle_spine(particles, lepton_idx, int_levels):
     """Vectorized TKI using the leading proton only.
@@ -295,4 +295,4 @@ def get_lepton_beam_angle_spine(particles, lepton_idx, int_levels):
 
     lep_start_dir = particles.start_dir.where(lep_mask).groupby(level=int_levels).first()
 
-    return np.arccos(lep_start_dir[2]);
+    return np.arccos(np.clip(lep_start_dir['z'], -1, 1))

@@ -1,7 +1,7 @@
 from makedf.makedf import *
 from pyanalib.pandas_helpers import *
 from makedf.util import *
-from pyanalib.variable_calculator import get_tki_spine, get_tki_spine_lp
+from pyanalib.variable_calculator import get_tki_spine, get_tki_spine_lp, get_lp_open_angle_spine, get_lepton_beam_angle_spine
 
 ## == For additional column in mcdf with primary particle multiplicities
 ## ==== "<column name>": ["<particle name>", <KE cut in GeV>]
@@ -231,9 +231,6 @@ def make_nueNp0Pi_df(f):
     proton_p_t = _ptmp.rec.dlp_true.particles.p.where(primproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_p_t = _ptmp.rec.dlp_true.particles.p.where(subprimproton_rows_t).groupby(level=int_levels).first()
-
-    # calculate TKI for MC
-    tki_var_names = ["del_alpha", "del_phi", "del_Tp"]
 
     tki_mc = get_tki_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels)
 
