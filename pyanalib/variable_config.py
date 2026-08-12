@@ -9,7 +9,7 @@ convenience derived from ``bins``.
 Analyses should subclass ``VariableConfig`` and add their own
 ``@classmethod`` factories, one per variable they care about (e.g.
 ``muon_momentum``, TKI variables, ...). See
-``analysis_village/nueNp0Pi/variable_configs.py`` for an example with ~70
+``analysis_village/nueNp0Pi/config/plots.py`` for an example with ~70
 variables built this way.
 
 ``INTEGRATED_VAR_SAVE_NAME`` / ``is_integrated_var_config`` are a small shared

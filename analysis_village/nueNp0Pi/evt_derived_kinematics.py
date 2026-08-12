@@ -1,4 +1,4 @@
-"""Derived per-event / per-track columns expected by :class:`variable_configs.VariableConfig`.
+"""Derived per-event / per-track columns expected by :class:`config.plots.VariableConfig`.
 
 Used by chunked syst drivers when reading pre-stored ``evt`` / ``mcnu`` tables that may omit
 reco ``phi``, opening-angle helpers, truth-level ``(..., truth, p, phi, )``, or
@@ -11,11 +11,11 @@ import pandas as pd
 
 from pyanalib.pandas_helpers import pad_column_name
 
-from analysis_village.nueNp0Pi.selection_framework import multicol_resolve_column_key
+from pyanalib.chunked_selection import multicol_resolve_column_key
 
 
 def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
-    """Add reco + truth kinematic columns used by :class:`~variable_configs.VariableConfig`.
+    """Add reco + truth kinematic columns used by :class:`~config.plots.VariableConfig`.
 
     Reco (CAF-style): ``theta_mu_p``, ``(mu|p).pfp.trk.phi`` from ``...dir.{x,y,z}``;
     truth: ``mc_theta_mu_p`` from ``mu``/``p`` ``...truth.p.dir.*`` (same ``arccos(dot)`` in rad);
@@ -68,10 +68,24 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         df, "p", "pfp", "trk", "truth", "p", "dir", "y"
     ) is not None
 
-    need_gev_reco = multicol_resolve_column_key(df, ("rec", "dlp", "ele_energy_reco_GeV", "", "")) is None \
-        and multicol_resolve_column_key(df, ("rec", "dlp", "ele_energy_reco", "", "")) is not None
-    need_gev_true = multicol_resolve_column_key(df, ("rec", "dlp_true", "ele_energy_true_GeV", "", "")) is None \
-        and multicol_resolve_column_key(df, ("rec", "dlp_true", "ele_energy_true", "", "")) is not None
+    # SPINE's native-units DLP reco/truth kinematic columns are in MeV, but the
+    # VariableConfig entries that plot them (config/plots.py's electron_energy(),
+    # proton_momentum()) use GeV bins to match their generator-level truth
+    # counterparts (mc.e.genE, mc.p.totp). Add "_GeV" siblings (raw * 1e-3) for
+    # each so those VariableConfigs have something on the right scale to point
+    # at. Confirmed against real data: e.g. rec.dlp.proton_p_reco has
+    # mean/max ~O(100-1000), matching mc.p.totp's GeV-scale truth x1000.
+    _mev_to_gev_cols = (
+        (("rec", "dlp", "ele_energy_reco", "", ""), ("rec", "dlp", "ele_energy_reco_GeV", "", "")),
+        (("rec", "dlp_true", "ele_energy_true", "", ""), ("rec", "dlp_true", "ele_energy_true_GeV", "", "")),
+        (("rec", "dlp", "proton_p_reco", "", ""), ("rec", "dlp", "proton_p_reco_GeV", "", "")),
+        (("rec", "dlp_true", "proton_p_true", "", ""), ("rec", "dlp_true", "proton_p_true_GeV", "", "")),
+    )
+    gev_conversions_needed = [
+        (src, gev) for src, gev in _mev_to_gev_cols
+        if multicol_resolve_column_key(df, gev) is None
+        and multicol_resolve_column_key(df, src) is not None
+    ]
 
     if not (
         (add_theta and dirs_ok)
@@ -80,8 +94,7 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         or (add_mc_theta and truth_dirs_ok)
         or (add_mu_t_phi and mu_truth_xy_ok)
         or (add_p_t_phi and p_truth_xy_ok)
-        or need_gev_reco
-        or need_gev_true
+        or gev_conversions_needed
     ):
         return df
 
@@ -130,14 +143,9 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         out.loc[:, pad_column_name(("p", "pfp", "trk", "truth", "p", "phi", ""), out)] = np.degrees(
             np.arctan2(px, py)
         )
-    # ele_energy_reco and ele_energy_true are stored in MeV; add GeV versions for
-    # VariableConfig plots that share bins with mc.e.genE (GeV).
-    if need_gev_reco:
-        src_key = multicol_resolve_column_key(out, ("rec", "dlp", "ele_energy_reco", "", ""))
-        out.loc[:, pad_column_name(("rec", "dlp", "ele_energy_reco_GeV", "", ""), out)] = out.loc[:, src_key] * 1e-3
-    if need_gev_true:
-        src_key = multicol_resolve_column_key(out, ("rec", "dlp_true", "ele_energy_true", "", ""))
-        out.loc[:, pad_column_name(("rec", "dlp_true", "ele_energy_true_GeV", "", ""), out)] = out.loc[:, src_key] * 1e-3
+    for src_parts, gev_parts in gev_conversions_needed:
+        src_key = multicol_resolve_column_key(out, src_parts)
+        out.loc[:, pad_column_name(gev_parts, out)] = out.loc[:, src_key] * 1e-3
     return out
 
 

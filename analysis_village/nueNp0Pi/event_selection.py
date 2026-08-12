@@ -1,40 +1,151 @@
-"""Shared helpers for the batched event-selection map phase.
+"""nueNp0Pi event-selection RUNNER: how a pipeline gets applied, not what it
+contains. Holds the per-job map phase and the factory that wires everything
+into the generic :class:`pyanalib.event_selection_pipeline.EventSelectionPipeline`.
 
-Loads multiple ``.df`` files into one in-memory bundle (with ``__ntuple`` remapping),
-runs the notebook pipeline on that bundle, and writes histogram/count pickles compatible
-with ``scripts/event_selection_aggregate.py``.
+The pipeline DEFINITION (what stages/cuts/plots exist) lives in
+:mod:`analysis_village.nueNp0Pi.config.stages` -- edit that module to add or
+remove a cut, add a plot, or follow a new variable through the efficiency
+curve. This module just calls :func:`~analysis_village.nueNp0Pi.config.stages.build_pipeline`
+and applies whatever ``Stage`` list comes back. Everything ANALYSIS-AGNOSTIC
+(survey/bin-pack/map-pool/aggregate orchestration) lives in
+:mod:`pyanalib.event_selection_pipeline`; this module only supplies the
+nueNp0Pi-specific pieces that orchestration needs.
+
+Formerly split across ``event_selection_pipeline_def.py`` (pipeline
+definition -- now ``config/stages.py``), ``event_selection_batched.py``
+(orchestration -- now in ``pyanalib.event_selection_pipeline``),
+``event_selection_batch_core.py`` (map-phase core), and
+``selection_framework.py`` (the ``ChunkRunner`` subclass). Rendering (the
+reduce/aggregate phase) is a big enough, distinct enough concern that it
+stays separate in ``event_selection_aggregate.py``.
+
+Adding new things
+-----------------
+* New cut       : add a Stage(...) at the right point in
+                  ``config.stages.build_pipeline``.
+* New plot      : append a PlotSpec(...) to a stage's ``plots`` list, in
+                  ``config.stages.build_pipeline``.
+* New eff. var  : extend ``CORE_SELECTED_EVT_VARIABLE_CONFIGS`` or the extras passed
+                  into ``with_final_selected_evt_variables`` for
+                  ``config.stages.EFFICIENCY_VARS`` -- both live in
+                  ``analysis_village/nueNp0Pi/config/plots.py``.
+
+Typical notebook usage::
+
+    from analysis_village.nueNp0Pi.event_selection import build_event_selection_pipeline
+    from pyanalib.event_selection_pipeline import EventSelectionPipelineConfig
+
+    pipeline = build_event_selection_pipeline(EventSelectionPipelineConfig())
+    result = pipeline.run_full()
 """
 from __future__ import annotations
 
 import gc
 import os
+import sys
+from datetime import datetime
 from os import path
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
-from pyanalib.split_df_helpers_new import (
-    _concat_hdf_frames,
-    _remap_ntuple_index,
-    _unique_ntuple_values_across_keys,
-    get_n_split,
-    load_dfs,
-)
-from pyanalib.pandas_helpers import pad_column_name
+sys.path.append(path.dirname(path.dirname(path.dirname(path.abspath(__file__)))))
 
-from analysis_village.nueNp0Pi.event_selection_pipeline_def import build_runner
+from analysis_village.nueNp0Pi.config.stages import build_pipeline, EFFICIENCY_VARS, BREAKDOWN_REGISTRY
+from analysis_village.nueNp0Pi.selections import SIGNAL_MASK_FN
+from analysis_village.nueNp0Pi.config.datasets import KEYS2LOAD
+from analysis_village.nueNp0Pi.dataset_paths import iter_event_selection_df_paths, default_syst_disk_root
 from analysis_village.nueNp0Pi.evt_derived_kinematics import (
     ensure_derived_trk_kinematics_cols,
     ensure_mc_level_phi_mcnu,
 )
-from analysis_village.nueNp0Pi.selection_framework import multicol_resolve_column_key
-from analysis_village.nueNp0Pi.files_config import KEYS2LOAD
 
+from pyanalib.chunked_selection import (
+    ChunkRunner as _BaseChunkRunner,
+    multicol_resolve_column_key,
+)
+from pyanalib.split_df_helpers_new import get_n_split, load_dfs
+from pyanalib.pandas_helpers import pad_column_name
+from pyanalib.event_selection_pipeline import (
+    EventSelectionHooks,
+    EventSelectionPipeline,
+    EventSelectionPipelineConfig,
+)
 from pyanalib.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
+
+SAMPLES = ("mc", "data", "intime", "offbeam", "dirt")
+
+
+# ===========================================================================
+# nueNp0Pi-flavored ChunkRunner (formerly selection_framework.py).
+# ===========================================================================
+class ChunkRunner(_BaseChunkRunner):
+    """nueNp0Pi-flavored ``ChunkRunner``.
+
+    Defaults ``breakdown_registry``/``signal_mask_fn`` to this analysis's
+    definitions (:data:`analysis_village.nueNp0Pi.config.stages.BREAKDOWN_REGISTRY`
+    / :data:`analysis_village.nueNp0Pi.selections.SIGNAL_MASK_FN`) so existing
+    call sites keep working unchanged:
+
+        ChunkRunner(sample, stages, efficiency_vars, mc_univ_syst_tags=...)
+
+    Pass ``breakdown_registry=`` / ``signal_mask_fn=`` explicitly to override
+    (or just construct ``pyanalib.chunked_selection.ChunkRunner`` directly).
+    """
+
+    def __init__(
+        self,
+        sample,
+        stages,
+        efficiency_vars,
+        mc_univ_syst_tags=None,
+        breakdown_registry=None,
+        signal_mask_fn=None,
+        bar_breakdown_types=("topology", "genie"),
+        efficiency_denom_from_first_stage=True,
+    ):
+        super().__init__(
+            sample=sample,
+            stages=stages,
+            efficiency_vars=efficiency_vars,
+            breakdown_registry=breakdown_registry or BREAKDOWN_REGISTRY,
+            signal_mask_fn=signal_mask_fn or SIGNAL_MASK_FN,
+            mc_univ_syst_tags=mc_univ_syst_tags,
+            bar_breakdown_types=bar_breakdown_types,
+            efficiency_denom_from_first_stage=efficiency_denom_from_first_stage,
+        )
+
+
+def build_runner(
+    sample: str,
+    mc_univ_syst_tags: tuple[str, ...] | None = None,
+) -> ChunkRunner:
+    """Build a ChunkRunner instance for a given sample.
+
+    Always uses the same pipeline definition, but knows which sample-slot to
+    fill in the histogram accumulators.
+
+    ``mc_univ_syst_tags``: optional tuple of MC multi-universe syst names (e.g.
+    ``("Flux", "G4", "GENIE")``) whose columns ``mc[s]['univ_i']`` are summed into
+    chunked histograms for later fractional covariance (see aggregate flag).
+    """
+    return ChunkRunner(
+        sample=sample,
+        stages=build_pipeline(),
+        efficiency_vars=EFFICIENCY_VARS,
+        mc_univ_syst_tags=mc_univ_syst_tags,
+    )
+
+
+# ===========================================================================
+# Map-phase core (formerly event_selection_batch_core.py): load a batch of
+# ``.df`` files, run the pipeline, write one pickle.
+# ===========================================================================
 def hdf_has_mcnu(df_file: str) -> bool:
     try:
         with pd.HDFStore(df_file, mode="r") as store:
@@ -181,40 +292,6 @@ def ensure_phi_and_kinematics_cols(
     return evt_df, mcnu_df
 
 
-def load_and_concat_df_files(
-    df_files: Sequence[str],
-    keys2load: Sequence[str],
-    *,
-    max_splits_per_file: int | None = None,
-) -> Tuple[Dict[str, pd.DataFrame], List[Dict[str, Any]]]:
-    """Load and concatenate multiple HDF ``.df`` files (notebook-style index remapping)."""
-    if not df_files:
-        raise ValueError("df_files is empty")
-    df_lists: Dict[str, List[pd.DataFrame]] = {k: [] for k in keys2load}
-    per_file_meta: List[Dict[str, Any]] = []
-    ntuple_offset = np.int64(0)
-
-    for df_file in df_files:
-        n_splits = get_n_split(df_file)
-        cap = n_splits if max_splits_per_file is None else min(n_splits, max_splits_per_file)
-        file_dfs = load_dfs(df_file, list(keys2load), n_max_concat=cap)
-        per_file_meta.append(file_hdr_meta(sample, hdr_df, df_file))
-
-        unique_ntuples = _unique_ntuple_values_across_keys(file_dfs, keys2load)
-        ntuple_remap = {
-            old: np.int64(ntuple_offset + i) for i, old in enumerate(unique_ntuples)
-        }
-        ntuple_offset += np.int64(len(ntuple_remap))
-
-        for k in keys2load:
-            df = file_dfs[k]
-            _remap_ntuple_index(df, ntuple_remap)
-            df_lists[k].append(df)
-
-    out = {k: _concat_hdf_frames(df_lists[k], label=k) for k in keys2load}
-    return out, per_file_meta
-
-
 def run_batch_selection(
     sample: str,
     df_files: Sequence[str],
@@ -257,7 +334,7 @@ def run_batch_selection(
             chunk_cosmic_gates_intime,
             chunk_cosmic_gates_offbeam,
         )
-        
+
         logger.debug(f"Keys available in {df_file}: {list(file_dfs.keys())}")
 
         evt_df = file_dfs["evt"]
@@ -295,3 +372,41 @@ def run_batch_selection(
     }
     runner.save(out_path, extra_meta=meta)
     return meta
+
+
+# ===========================================================================
+# Wiring: build a generic EventSelectionPipeline with nueNp0Pi's hooks plugged in.
+# (formerly event_selection_batched.py's module-level functions)
+# ===========================================================================
+def default_event_selection_batched_work_root(tag: str | None = None) -> Path:
+    t = tag or datetime.now().strftime("%Y%m%d")
+    base = os.environ.get("NUMUCC_EVENT_SELECTION_WORK_BASE")
+    if base:
+        return Path(base)
+    user = os.environ.get("USER", "user")
+    return Path(f"/exp/sbnd/data/users/{user}/xsec/numucc_1p0pi/event_selection-batched-{t}")
+
+
+def build_event_selection_pipeline(
+    cfg: EventSelectionPipelineConfig | None = None,
+) -> EventSelectionPipeline:
+    """Build an :class:`~pyanalib.event_selection_pipeline.EventSelectionPipeline`
+    wired up with nueNp0Pi's map phase (:func:`run_batch_selection`), reduce/render
+    phase (:func:`analysis_village.nueNp0Pi.event_selection_aggregate.aggregate_and_render`),
+    and dataset glob lookup (:func:`analysis_village.nueNp0Pi.dataset_paths.iter_event_selection_df_paths`).
+    """
+    from analysis_village.nueNp0Pi.config.datasets import EVENT_SELECTION_GLOBS
+    # Deferred: event_selection_aggregate imports build_pipeline/EFFICIENCY_VARS
+    # from this module, so importing it back at module load time would cycle.
+    from analysis_village.nueNp0Pi.event_selection_aggregate import aggregate_and_render
+
+    cfg = cfg or EventSelectionPipelineConfig()
+    hooks = EventSelectionHooks(
+        iter_df_paths=iter_event_selection_df_paths,
+        run_batch_selection=run_batch_selection,
+        aggregate_and_render=aggregate_and_render,
+        default_work_root=default_event_selection_batched_work_root,
+        default_syst_disk_root=default_syst_disk_root,
+        describe_glob=lambda sample: EVENT_SELECTION_GLOBS.get(sample, "(no glob configured)"),
+    )
+    return EventSelectionPipeline(cfg, hooks)

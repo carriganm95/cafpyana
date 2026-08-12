@@ -1,5 +1,22 @@
-import numpy as np
+"""Plots config: variable definitions (bins, labels, column paths) for this analysis.
+
+Selection cuts and truth categories live in
+:mod:`analysis_village.nueNp0Pi.selections` (thresholds/labels in
+:mod:`analysis_village.nueNp0Pi.config.settings`). Dataset paths and other
+config live in :mod:`analysis_village.nueNp0Pi.config.datasets`.
+
+Also holds the canonical, curated ``VariableConfig`` SETS built from the
+factories below -- ``CORE_SELECTED_EVT_VARIABLE_CONFIGS``,
+``FINAL_SELECTED_EVT_VARIABLE_CONFIGS``, ``INTERMEDIATE_CUT_SYST_VARIABLE_CONFIGS``,
+and the ``with_final_selected_evt_variables`` merge helper -- used across
+notebooks and systematics scripts (formerly ``final_selected_evt_vars.py``,
+folded in here since both files were "variable definitions", just at
+different granularity: individual factories vs. curated lists of them).
+"""
 import inspect
+from typing import List, Sequence
+
+import numpy as np
 
 from pyanalib.variable_config import (
     VariableConfig as _BaseVariableConfig,
@@ -50,7 +67,20 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{E_e}$ [GeV]", 
             r"$\mathrm{E_e^{reco.}}$ [GeV]", 
             r"$\mathrm{E_e^{true}}$ [GeV]"],
-            bins=np.linspace(0.0, 3.0, 15),
+            bins=np.linspace(0.0, 3.0, 30),
+            # CORRECTION (see selection_electron-e.png investigation): the raw
+            # rec.dlp.ele_energy_reco / rec.dlp_true.ele_energy_true columns are
+            # in MeV (SPINE's native units), not GeV -- confirmed against
+            # data/test.df (mean/max on the order of tens-to-thousands, matching
+            # mc.e.genE's GeV-scale truth x1000). These bins/labels are GeV, so
+            # this MUST point at the "_GeV" sibling columns that
+            # evt_derived_kinematics.ensure_derived_trk_kinematics_cols computes
+            # (raw_col * 1e-3) -- those only exist after that function runs, which
+            # is why a direct real-data column search on undressed test.df (no
+            # derivation step applied) doesn't find them and can look "stale". An
+            # earlier pass here swapped these to the raw MeV columns thinking the
+            # _GeV names were the stale ones -- that was wrong and silently broke
+            # the electron energy plot's units; reverted.
             var_evt_reco_col=('rec', 'dlp', 'ele_energy_reco_GeV', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'ele_energy_true_GeV', '', '', ''),
             var_nu_col=('mc', 'e', 'genE'),
@@ -125,9 +155,18 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{P_p}$ [GeV/c]", 
             r"$\mathrm{P_p^{reco.}}$ [GeV/c]", 
             r"$\mathrm{P_p^{true}}$ [GeV/c]"],
-            bins=np.linspace(0.0, 3.0, 15),
-            var_evt_reco_col=('rec', 'dlp', 'proton_p_reco', '', '', '', ''),
-            var_evt_truth_col=('rec', 'dlp_true', 'proton_p_truth', '', '', '', ''),
+            bins=np.linspace(0.0, 3.0, 30),
+            # Same MeV-vs-GeV issue as electron_energy() above: rec.dlp.proton_p_reco
+            # is SPINE's native-units momentum, confirmed in MeV against real data
+            # (mean ~560 there vs. mean ~0.56 GeV on mc.p.totp -- a clean x1000).
+            # These bins are GeV/c, so point at the "_GeV" derived sibling columns
+            # (see evt_derived_kinematics.ensure_derived_trk_kinematics_cols, which
+            # now also derives these the same way it already did for electron
+            # energy). Also fixes a separate stale-name bug: the truth column here
+            # was "proton_p_truth" (with an extra "h"), which doesn't exist on real
+            # data -- the real column is "proton_p_true".
+            var_evt_reco_col=('rec', 'dlp', 'proton_p_reco_GeV', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'proton_p_true_GeV', '', '', '', ''),
             var_nu_col=('mc', 'p', 'totp'),
             xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
         )
@@ -155,7 +194,7 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{\delta p_T}$ [GeV/c]", 
             r"$\mathrm{\delta p_T^{reco.}}$ [GeV/c]", 
             r"$\mathrm{\delta p_T^{true}}$ [GeV/c]"],
-            bins=np.array([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0]),
+            bins=np.linspace(0.0, 3.0, 30),
             var_evt_reco_col=('rec', 'dlp', 'del_Tp_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_Tp_true', '', ''),
@@ -200,7 +239,7 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{\delta p_T}$ l-p [GeV/c]", 
             r"$\mathrm{\delta p_T^{reco.}}$ l-p [GeV/c]", 
             r"$\mathrm{\delta p_T^{true}}$ l-p [GeV/c]"],
-            bins=np.array([0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0]),
+            bins=np.linspace(0.0, 3.0, 30),
             var_evt_reco_col=('rec', 'dlp', 'del_Tp_lp_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', ''),
@@ -241,15 +280,30 @@ class VariableConfig(_BaseVariableConfig):
     def opening_angle(cls):
         return cls(
             var_save_name="opening_angle",
-            var_plot_name="$\\theta_{\\mu, p}$",
-            var_labels=[r"$\mathrm{\theta_{\mu, p}}$ [deg]", 
-            r"$\mathrm{\theta_{\mu, p}^{reco.}}$ [deg]", 
-            r"$\mathrm{\theta_{\mu, p}^{true}}$ [deg]"],
-            bins=np.linspace(0., np.pi, 16),
-            var_evt_reco_col=('theta_mu_p', '', '', '', '', '', ''),
-            var_evt_truth_col=('mc_theta_mu_p', '', '', '', '', '', ''),
-            var_nu_col=('theta_mu_p', ''),
-            xsec_label=r"$\frac{d\sigma}{d\theta_{\\mu p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
+            var_plot_name="$cos{\\theta_{e, p}}$",
+            var_labels=[r"$\mathrm{cos(\theta_{e, p})}$", 
+            r"$\mathrm{cos(\theta_{e, p}^{reco.})}$", 
+            r"$\mathrm{cos(\theta_{e, p}^{true})}$"],
+            bins=np.linspace(-1.0, 1.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'lp_open_angle_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'lp_open_angle_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'lp_open_angle_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
+        )
+
+    @classmethod
+    def opening_angle_beam(cls):
+        return cls(
+            var_save_name="opening_angle_beam",
+            var_plot_name="$cos{\\theta_{e, beam}}$",
+            var_labels=[r"$\mathrm{cos(\theta_{e, beam})}$", 
+            r"$\mathrm{cos(\theta_{e, beam}^{reco.})}$", 
+            r"$\mathrm{cos(\theta_{e, beam}^{true})}$"],
+            bins=np.linspace(-1.0, 1.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'lepton_beam_angle_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
         )
 
     # ==== additional variables for efficiency inspection ====
@@ -264,7 +318,7 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=["$\mathrm{E_{\\nu}}$ [GeV]", 
             "Neutrino Energy [GeV]", 
             "Neutrino Energy [GeV]"],
-            bins=np.linspace(0.2, 1.7, 16),
+            bins=np.linspace(0.0, 5, 25),
             var_evt_reco_col=('mc', 'E', '', '', '', '', ''),
             var_evt_truth_col=('mc', 'E', '', '', '', '', ''),
             var_nu_col=('mc', 'E', ''),
@@ -662,6 +716,30 @@ class VariableConfig(_BaseVariableConfig):
             bins=np.linspace(0.2, 0.9, 71),
             var_evt_reco_col=('pfp', 'trackScore', '', '', '', ''),
             var_evt_truth_col=('pfp', 'trackScore', '', '', '', ''),
+            var_nu_col=('', '', ''),
+            xsec_label=r""
+        )
+
+    @classmethod
+    def particle_ke(cls):
+        """Per-particle kinetic energy (SPINE ``rec.dlp.particles.ke``, MeV).
+
+        Track-level (one row per reconstructed particle, not per event) --
+        pair with ``selector=sel_primary_trks`` and ``breakdown_type="pdg"``
+        so each particle is colored by its TRUE pdg category. This is the
+        particle-type breakdown plot: unlike topology/genie (event-level
+        truth categories), pdg categorizes individual reconstructed
+        particles, so it needs a per-particle df, not the per-event one.
+        """
+        return cls(
+            var_save_name="particle_ke",
+            var_plot_name="Particle KE",
+            var_labels=[r"Reconstructed Kinetic Energy [MeV]",
+            "",
+            ""],
+            bins=np.linspace(0, 200, 51),
+            var_evt_reco_col=('rec', 'dlp', 'particles', 'ke', ''),
+            var_evt_truth_col=('rec', 'dlp', 'particles', 'ke', ''),
             var_nu_col=('', '', ''),
             xsec_label=r""
         )
@@ -1140,3 +1218,57 @@ var_configs_extra_slc = [
                 VariableConfig.vertex_y(),
                 VariableConfig.vertex_z(),
                 ]
+
+
+# ===========================================================================
+# Canonical kinematic VariableConfig SETS for final-sample plots/systematics.
+# (Formerly ``analysis_village/nueNp0Pi/final_selected_evt_vars.py``.)
+#
+# * CORE_SELECTED_EVT_VARIABLE_CONFIGS -- baseline distributions (integrated +
+#   electron/proton kinematics + TKI) used across notebooks and syst scripts.
+# * FINAL_SELECTED_EVT_VARIABLE_CONFIGS -- extra vertex/phi components; merged
+#   in via with_final_selected_evt_variables() without duplicating var_save_name.
+# ===========================================================================
+
+# Variables defined on loose / pre-final evt dfs (nu score, multiplicity, vertex).
+# Use with MC dfs from ``get_ana_dfs("systs", systs_mc_df_tag="-sel_all-wgts", ...)``.
+INTERMEDIATE_CUT_SYST_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
+    VariableConfig.all_events(),
+    VariableConfig.nu_score(),
+    VariableConfig.n_trks(),
+    VariableConfig.vertex_x(),
+    VariableConfig.vertex_y(),
+    VariableConfig.vertex_z(),
+)
+
+CORE_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
+    VariableConfig.all_events(),
+    VariableConfig.electron_energy(),
+    VariableConfig.proton_momentum(),
+    VariableConfig.tki_del_Tp(),
+    VariableConfig.tki_del_alpha(),
+    VariableConfig.tki_del_phi(),
+    VariableConfig.tki_del_Tp_lp(),
+    VariableConfig.tki_del_alpha_lp(),
+    VariableConfig.tki_del_phi_lp(),
+    VariableConfig.opening_angle(),
+    VariableConfig.opening_angle_beam()
+)
+
+FINAL_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
+    VariableConfig.electron_energy(),
+    VariableConfig.vertex_x(),
+    VariableConfig.vertex_y(),
+    VariableConfig.vertex_z(),
+)
+
+
+def with_final_selected_evt_variables(configs: Sequence[VariableConfig]) -> List[VariableConfig]:
+    """``configs`` plus any entry from :data:`FINAL_SELECTED_EVT_VARIABLE_CONFIGS` not already present."""
+    seen = {c.var_save_name for c in configs}
+    out: List[VariableConfig] = list(configs)
+    for vc in FINAL_SELECTED_EVT_VARIABLE_CONFIGS:
+        if vc.var_save_name not in seen:
+            out.append(vc)
+            seen.add(vc.var_save_name)
+    return out

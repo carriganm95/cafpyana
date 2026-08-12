@@ -243,6 +243,14 @@ def make_nueNp0Pi_df(f):
 
     tki_lp_mc_true = get_tki_spine_lp(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, _ptmp.rec.dlp_true.true_primpr, int_levels)
 
+    lp_open_angle = np.cos(get_lp_open_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels))
+
+    lepton_beam_angle = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels))
+
+    lp_open_angle_true = np.cos(get_lp_open_angle_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, _ptmp.rec.dlp_true.true_primpr, int_levels))
+
+    lepton_beam_angle_true = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, int_levels))
+
     true_signalNp = nu_mask & fiducial_mask_t & cc_mask & nupdg_mask & \
                   ele_mask_t & proton_mask_t & subprimproton_mask_t & ~muon_mask_t & ~pion_mask_t & ~photon_mask_t
 
@@ -313,6 +321,9 @@ def make_nueNp0Pi_df(f):
                         ('del_phi_true',   tki_mc_true['del_phi']),
                         ('del_Tp_true',    tki_mc_true['del_Tp']),
 
+                        ('lp_open_angle_true', lp_open_angle_true),
+                        ('lepton_beam_angle_true', lepton_beam_angle_true),
+
                         ('true_signal1p', true_signal1p),
                         ('true_signalNp', true_signalNp),
                         ('bkgd_oofv',     bkgd_oofv),
@@ -356,7 +367,12 @@ def make_nueNp0Pi_df(f):
                         ('del_Tp_lp_reco',    tki_lp_mc['del_Tp']),
                         ('del_alpha_reco', tki_mc['del_alpha']),
                         ('del_phi_reco',   tki_mc['del_phi']),
-                        ('del_Tp_reco',    tki_mc['del_Tp'])]:
+                        ('del_Tp_reco',    tki_mc['del_Tp']),
+                        
+                        ('lp_open_angle_reco', lp_open_angle),
+                        ('lepton_beam_angle_reco', lepton_beam_angle)
+
+                        ]:
         col = pad_column_name(('rec', 'dlp', label), slcdf)
         slcdf[col] = mask
 

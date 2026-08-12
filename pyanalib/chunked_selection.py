@@ -35,8 +35,8 @@ not by this module:
   analysis's truth-signal definition, used by ``EfficiencyAccumulator``.
 
 Both are passed into ``ChunkRunner(...)``. See
-``analysis_village/nueNp0Pi/selection_framework.py`` for an example that
-wraps ``ChunkRunner`` with numuCC-1p0pi-specific defaults.
+``analysis_village/nueNp0Pi/event_selection.py``'s ``ChunkRunner`` subclass for an example that
+wraps this with nueNp0Pi-specific defaults.
 
 Adding new things (analysis side)
 ----------------------------------

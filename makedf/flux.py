@@ -7,7 +7,7 @@ combine them into a per-bin cross-section normalization unit.
 
 No input-file paths are hardcoded here -- callers pass their own ``fluxfile``
 path explicitly (e.g. from a per-analysis paths config such as
-``analysis_village/nueNp0Pi/dataset_locations.py``) rather than this module
+``analysis_village/nueNp0Pi/config/datasets.py``) rather than this module
 defaulting to one physicist's personal directory.
 """
 

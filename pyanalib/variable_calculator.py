@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from makedf.util import *
 from makedf.constants import *
-import vector
 
 from pyanalib.pandas_helpers import multicol_add, pad_column_name
 
@@ -262,3 +261,38 @@ def add_truth_cc1p0pi_tki_evtdf(
         tname = ("mc", var_name) + ("",) * (nlevel - 2)
         evtdf = multicol_add(evtdf, tki_truth[var_name].rename(tname))
     return evtdf
+
+def get_lp_open_angle_spine(particles, lepton_idx, proton_idx, int_levels):
+    """Vectorized TKI using the leading proton only.
+
+    particles:   particle-level DataFrame
+    lepton_idx:  particle-level Series with the lepton particle index broadcast per interaction
+    proton_idx:  particle-level Series with the leading proton particle index broadcast per interaction
+    int_levels:  list of index levels identifying an interaction
+
+    Returns a dict of interaction-level Series.
+    """
+    part_idx = pd.Series(particles.index.get_level_values(-1), index=particles.index)
+    lep_mask = part_idx == lepton_idx
+    pro_mask = part_idx == proton_idx
+
+    lep_start_dir = particles.start_dir.where(lep_mask).groupby(level=int_levels).first()
+    pro_start_dir = particles.start_dir.where(pro_mask).groupby(level=int_levels).first
+
+    return np.arccos(lep_start_dir[0] * pro_start_dir[0] + lep_start_dir[1] * pro_start_dir[1] + lep_start_dir[2] * pro_start_dir[2]);
+
+def get_lepton_beam_angle_spine(particles, lepton_idx, int_levels):
+    """Vectorized TKI using the leading proton only.
+
+    particles:   particle-level DataFrame
+    lepton_idx:  particle-level Series with the lepton particle index broadcast per interaction
+    int_levels:  list of index levels identifying an interaction
+
+    Returns a dict of interaction-level Series.
+    """
+    part_idx = pd.Series(particles.index.get_level_values(-1), index=particles.index)
+    lep_mask = part_idx == lepton_idx
+
+    lep_start_dir = particles.start_dir.where(lep_mask).groupby(level=int_levels).first()
+
+    return np.arccos(lep_start_dir[2]);
