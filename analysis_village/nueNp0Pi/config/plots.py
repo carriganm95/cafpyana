@@ -322,6 +322,97 @@ class VariableConfig(_BaseVariableConfig):
             xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
         )
 
+    @classmethod
+    def electron_softmax_score(cls):
+        return cls(
+            var_save_name="electron-softmax-score",
+            var_plot_name="Electron Softmax Score",
+            var_labels=[r"Electron Softmax Score", 
+            r"Electron Softmax Score", 
+            r"Electron Softmax Score"],
+            bins=np.linspace(0.0, 1.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'ele_softmax_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_softmax_reco', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_softmax_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Softmax Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
+    
+    @classmethod
+    def electron_primary_score(cls):
+        return cls(
+            var_save_name="electron-primary-score",
+            var_plot_name="Electron Primary Score",
+            var_labels=[r"Electron Primary Score", 
+            r"Electron Primary Score", 
+            r"Electron Primary Score"],
+            bins=np.linspace(0.0, 1.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'ele_primary_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_primary_reco', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_primary_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Primary Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
+    @classmethod
+    def proton_softmax_score(cls):
+        return cls(
+            var_save_name="proton-softmax-score",
+            var_plot_name="Proton Softmax Score",
+            var_labels=[r"Proton Softmax Score", 
+            r"Proton Softmax Score", 
+            r"Proton Softmax Score"],
+            bins=np.linspace(0.0, 1.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'proton_softmax_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'proton_softmax_reco', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'proton_softmax_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Proton Softmax Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
+    @classmethod
+    def electron_dedx(cls):
+        return cls(
+            var_save_name="electron-dedx",
+            var_plot_name="Electron dE/dx",
+            var_labels=[r"Electron dE/dx", 
+            r"Electron dE/dx", 
+            r"Electron dE/dx"],
+            bins=np.linspace(0.0, 10.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'ele_dedx_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_dedx_reco', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_dedx_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron dE/dx}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
+    @classmethod
+    def electron_vertex_distance(cls):
+        return cls(
+            var_save_name="electron-vertex-distance",
+            var_plot_name="Electron Vertex Distance [cm]",
+            var_labels=[r"Electron Vertex Distance [cm]", 
+            r"Electron Vertex Distance [cm]", 
+            r"Electron Vertex Distance [cm]"],
+            bins=np.linspace(0.0, 10.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Vertex Distance}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
+    @classmethod
+    def secondary_proton_p(cls):
+        return cls(
+            var_save_name="secondary-proton-p",
+            var_plot_name="Secondary Proton p [GeV/c]",
+            var_labels=[r"Secondary Proton p [GeV/c]", 
+            r"Secondary Proton p [GeV/c]", 
+            r"Secondary Proton p [GeV/c]"],
+            bins=np.linspace(0.0, 10.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'subprim_proton_p_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'subprim_proton_p_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'subprim_proton_p_reco', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary Proton p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+        )
+
     # ==== additional variables for efficiency inspection ====
 
 
@@ -1269,7 +1360,13 @@ CORE_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
     VariableConfig.tki_del_phi_lp(),
     VariableConfig.opening_angle(),
     VariableConfig.opening_angle_beam(),
-    VariableConfig.electron_energy_resolution(),
+    VariableConfig.electron_energy_res(),
+    VariableConfig.electron_dedx(),
+    VariableConfig.electron_vertex_distance(),
+    VariableConfig.electron_softmax_score(),
+    VariableConfig.electron_primary_score(),
+    VariableConfig.proton_softmax_score(),
+    VariableConfig.secondary_proton_p()
 )
 
 FINAL_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
