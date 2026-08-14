@@ -291,8 +291,8 @@ def make_nueNp0Pi_df(f):
                 (nu_mask & ~cc_mask)
 
     bkgd_other = ~true_signal1p & ~true_signalNp & ~bkgd_oofv & ~bkgd_oops & \
-                ~bkgd_pi & ~bkgd_mu & ~bkgd_photon & ~bkgd_nueOther & ~bkgd_numu & ~bkgd_nc & \
-                (~nu_mask)
+                ~bkgd_pi & ~bkgd_mu & ~bkgd_photon & ~bkgd_nueOther & ~bkgd_numu & ~bkgd_nc #& \
+                #(~nu_mask)
     
     for label, mask, in [
                         ('nu_mask',       nu_mask),
@@ -379,8 +379,8 @@ def make_nueNp0Pi_df(f):
         slcdf[col] = mask
 
     # pre-selection cuts
-    slcdf = slcdf[slcdf.rec.dlp['is_fiducial'] == 1]
-    slcdf = slcdf[slcdf.rec.dlp['is_flash_matched'] == 1]
-    slcdf = slcdf[slcdf.rec.dlp['is_contained'] == 1]
+    # slcdf = slcdf[slcdf.rec.dlp['is_fiducial'] == 1]
+    # slcdf = slcdf[slcdf.rec.dlp['is_flash_matched'] == 1]
+    # slcdf = slcdf[slcdf.rec.dlp['is_contained'] == 1]
 
     return truth_match_spine(slcdf, mcdf) 

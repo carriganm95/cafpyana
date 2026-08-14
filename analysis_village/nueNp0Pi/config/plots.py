@@ -88,6 +88,22 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def electron_energy_res(cls):
+        return cls(
+            var_save_name="electron-e-res",
+            var_plot_name="$E_e$ Resolution",
+            var_labels=[r"$\mathrm{E_e}$ Resolution",
+            r"$\mathrm{E_e^{reco.}}$ Resolution",
+            r"$\mathrm{E_e^{true}}$ Resolution"],
+            bins=np.linspace(-10.0, 10.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$"
+
+        )
+
+    @classmethod
     def muon_momentum(cls):
         return cls(
             var_save_name="muon-p",
@@ -1252,7 +1268,8 @@ CORE_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
     VariableConfig.tki_del_alpha_lp(),
     VariableConfig.tki_del_phi_lp(),
     VariableConfig.opening_angle(),
-    VariableConfig.opening_angle_beam()
+    VariableConfig.opening_angle_beam(),
+    VariableConfig.electron_energy_resolution(),
 )
 
 FINAL_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (

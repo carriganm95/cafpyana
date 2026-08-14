@@ -748,12 +748,20 @@ def make_spine_int_df(f, get_best_match=True):
         validate_matched_with_true = "many_to_one"
 
     # Match reco SPINE interactions to match_ids and match_overlaps data.
+    # spineint_matched_df = multicol_merge(
+    #     lhs=matches_df,
+    #     rhs=spineint_df,
+    #     on=["entry", "rec.dlp..index"],
+    #     how="left",
+    #     validate=validate_matched
+    # )
+    # Updated to use the correct order of lhs and rhs in the merge to avoid dropping reco interactions not matched to true interactions
     spineint_matched_df = multicol_merge(
-        lhs=matches_df,
-        rhs=spineint_df,
+        lhs=spineint_df,
+        rhs=matches_df,
         on=["entry", "rec.dlp..index"],
         how="left",
-        validate=validate_matched
+        validate="one_to_one"   # or the many/one variant depending on get_best_match
     )
 
     # Match reco SPINE interactions with true SPINE interactions.

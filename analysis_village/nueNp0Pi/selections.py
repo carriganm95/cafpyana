@@ -408,7 +408,7 @@ def get_genie_sb_category(df, ret_cuts=False, print_summary=False, detector=DETE
 # (Formerly ``analysis_village/nueNp0Pi/makedf/selections.py``.)
 # ===========================================================================
 def fiducial_volume(df):
-    return df[df.rec.dlp.is_fiducial == 1]
+    return df[(df.rec.dlp.is_fiducial == 1) & (df.rec.dlp.sbnd_fiducial_reco == 1)]
 
 def contained(df):
     return df[df.rec.dlp.is_contained == 1]

@@ -87,6 +87,9 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         and multicol_resolve_column_key(df, src) is not None
     ]
 
+    _res_col = ("rec", "dlp", "ele_energy_res_GeV", "", "")
+    add_ele_res = multicol_resolve_column_key(df, _res_col) is None
+
     if not (
         (add_theta and dirs_ok)
         or (add_mu_phi and mu_xy_ok)
@@ -95,6 +98,7 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         or (add_mu_t_phi and mu_truth_xy_ok)
         or (add_p_t_phi and p_truth_xy_ok)
         or gev_conversions_needed
+        or add_ele_res
     ):
         return df
 
@@ -146,6 +150,11 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
     for src_parts, gev_parts in gev_conversions_needed:
         src_key = multicol_resolve_column_key(out, src_parts)
         out.loc[:, pad_column_name(gev_parts, out)] = out.loc[:, src_key] * 1e-3
+    if add_ele_res:
+        reco_key = multicol_resolve_column_key(out, ("rec", "dlp", "ele_energy_reco_GeV", "", ""))
+        true_key = multicol_resolve_column_key(out, ("rec", "dlp_true", "ele_energy_true_GeV", "", ""))
+        if reco_key is not None and true_key is not None:
+            out.loc[:, pad_column_name(_res_col, out)] = (out.loc[:, true_key] - out.loc[:, reco_key]) / out.loc[:, true_key]
     return out
 
 
