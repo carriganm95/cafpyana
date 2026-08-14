@@ -248,11 +248,14 @@ def make_nueNp0Pi_df(f):
 
     lepton_beam_angle_true = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, int_levels))
 
-    true_signalNp = nu_mask & fiducial_mask_t & cc_mask & nupdg_mask & \
+    sbnd_fiducial = InFV(slcdf.rec.dlp.vertex, det="SBND_Gen1")
+    sbnd_fiducial_true = InFV(slcdf.rec.dlp_true.vertex, det="SBND_Gen1")
+
+    true_signalNp = nu_mask & fiducial_mask_t & sbnd_fiducial_true & cc_mask & nupdg_mask & \
                   ele_mask_t & proton_mask_t & subprimproton_mask_t & ~muon_mask_t & ~pion_mask_t & ~photon_mask_t
 
     true_signal1p = ~true_signalNp & \
-                (nu_mask & fiducial_mask_t & cc_mask & nupdg_mask & \
+                (nu_mask & fiducial_mask_t & sbnd_fiducial_true & cc_mask & nupdg_mask & \
                   ele_mask_t & proton_mask_t & ~subprimproton_mask_t & ~muon_mask_t & ~pion_mask_t & ~photon_mask_t)
 
     bkgd_oofv = ~true_signal1p & ~true_signalNp & \
@@ -297,6 +300,7 @@ def make_nueNp0Pi_df(f):
                         ('nupdg_mask',    nupdg_mask),
 
                         ('fiducial_mask_true', fiducial_mask_t),
+                        ('sbnd_fiducial_true', sbnd_fiducial_true),
                         ('ele_mask_true',      ele_mask_t),
                         ('proton_mask_true',   proton_mask_t),
                         ('subprimproton_mask_true', subprimproton_mask_t),
@@ -337,6 +341,7 @@ def make_nueNp0Pi_df(f):
 
     for label, mask in [                        
                         ('fiducial_mask_reco', fiducial_mask_r),
+                        ('sbnd_fiducial_reco', sbnd_fiducial),
                         ('flash_match_reco', flash_match_r),
                         ('containment_reco', containment_r),
                         ('subprimproton_mask_reco', subprimproton_mask_r),

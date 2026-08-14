@@ -980,11 +980,12 @@ def aggregate_and_render(
 
     # ---- render (syst bands only from pre-saved disk covariances)
     from analysis_village.nueNp0Pi.utils import _DEFAULT_SYST_DISK_ROOT
-    resolved_syst_disk_root = (
-        syst_disk_root
-        or os.environ.get("NUMUCC_SYST_DISK_ROOT")
-        or _DEFAULT_SYST_DISK_ROOT
-    )
+    _env_syst = os.environ.get("NUMUCC_SYST_DISK_ROOT")
+    if _env_syst is not None:
+        # env var explicitly set: empty string means "no systematics"
+        resolved_syst_disk_root = _env_syst or None
+    else:
+        resolved_syst_disk_root = syst_disk_root or _DEFAULT_SYST_DISK_ROOT
     if resolved_syst_disk_root and not os.path.isdir(resolved_syst_disk_root):
         print(f"[aggregate] systematics disk root not found, skipping syst bands: {resolved_syst_disk_root}", flush=True)
         resolved_syst_disk_root = None

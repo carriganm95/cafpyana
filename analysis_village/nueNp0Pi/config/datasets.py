@@ -84,7 +84,7 @@ FLUX_FILE = os.environ.get(
 SPRING_GEN1_ROOT = Path(
     os.environ.get(
         "NUMUCC_SPRING_GEN1_ROOT",
-        "/Users/micarrig/Desktop/SBND/data/",
+        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_test/",
     )
 )
 
@@ -98,7 +98,7 @@ SPRING_GEN1_ROOT_EAF = Path(
 PLOTS_BASE = Path(
     os.environ.get(
         "NUMUCC_PLOTS_BASE",
-        "/Users/micarrig/Desktop/SBND/cafpyana/plots/",
+        "/nashome/m/micarrig/sbnd/nueCCNp/plots/",
     )
 )
 

@@ -1,6 +1,6 @@
 cffi
 jupyterlab==4.3.5
-numpy==1.26.4
+numpy>=2.0
 uproot==5.6.3
 matplotlib
 scipy
