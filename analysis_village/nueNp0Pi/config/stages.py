@@ -252,6 +252,24 @@ EVT_BREAKDOWN_STAGE_KEYS: Optional[Sequence[str]] = None  # None -> final stage 
 # whatever a notebook cell set most recently -- same pattern as the other EVT_BREAKDOWN_* knobs).
 EVT_BREAKDOWN_DIR_NAME: Optional[str] = None
 
+# Global kill switch for the per-VariableConfig ratio subplot (VariableConfig.ratio_mode --
+# "data_mc" / "reco_true" / "signal_bkgd" -- see pyanalib.variable_config). Set True from a
+# notebook cell (``stages_mod.DISABLE_RATIO_PLOTS = True``) to force every plot's ratio panel
+# off for a render pass, without editing ratio_mode on every VariableConfig. Same
+# live-read-at-render-time pattern as EVT_BREAKDOWN_DIR_NAME above -- read by
+# event_selection_aggregate.py's render_overlay_plots via ``stages_mod.DISABLE_RATIO_PLOTS``.
+DISABLE_RATIO_PLOTS: bool = False
+
+# Global kill switch for the per-VariableConfig true-vs-reco response-matrix plot
+# (VariableConfig.response_matrix -- see pyanalib.variable_config /
+# pyanalib.response_matrix_plotting). Set True from a notebook cell
+# (``stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS = True``) to skip rendering every such plot for a
+# render pass, without editing response_matrix on every VariableConfig. Same
+# live-read-at-render-time pattern as DISABLE_RATIO_PLOTS above -- read by
+# event_selection_aggregate.py's render_response_matrix_plots via
+# ``stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS``.
+DISABLE_RESPONSE_MATRIX_PLOTS: bool = False
+
 
 # ===========================================================================
 # Pipeline definition

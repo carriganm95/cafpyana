@@ -68,23 +68,11 @@ class VariableConfig(_BaseVariableConfig):
             r"$\mathrm{E_e^{reco.}}$ [GeV]", 
             r"$\mathrm{E_e^{true}}$ [GeV]"],
             bins=np.linspace(0.0, 3.0, 30),
-            # CORRECTION (see selection_electron-e.png investigation): the raw
-            # rec.dlp.ele_energy_reco / rec.dlp_true.ele_energy_true columns are
-            # in MeV (SPINE's native units), not GeV -- confirmed against
-            # data/test.df (mean/max on the order of tens-to-thousands, matching
-            # mc.e.genE's GeV-scale truth x1000). These bins/labels are GeV, so
-            # this MUST point at the "_GeV" sibling columns that
-            # evt_derived_kinematics.ensure_derived_trk_kinematics_cols computes
-            # (raw_col * 1e-3) -- those only exist after that function runs, which
-            # is why a direct real-data column search on undressed test.df (no
-            # derivation step applied) doesn't find them and can look "stale". An
-            # earlier pass here swapped these to the raw MeV columns thinking the
-            # _GeV names were the stale ones -- that was wrong and silently broke
-            # the electron energy plot's units; reverted.
             var_evt_reco_col=('rec', 'dlp', 'ele_energy_reco_GeV', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'ele_energy_true_GeV', '', '', ''),
             var_nu_col=('mc', 'e', 'genE'),
-            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -99,8 +87,11 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
-            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$"
-
+            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
         )
 
     @classmethod
@@ -115,7 +106,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('mu', 'pfp', 'trk', 'P', 'p_muon', '', ''),
             var_evt_truth_col=('mu', 'pfp', 'trk', 'truth', 'p', 'totp', ''),
             var_nu_col=('mc', 'mu', 'totp'),
-            xsec_label=r"$\frac{d\sigma}{dP_\mu}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{dP_\mu}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True,
         )
 
     @classmethod
@@ -172,19 +164,11 @@ class VariableConfig(_BaseVariableConfig):
             r"$\mathrm{P_p^{reco.}}$ [GeV/c]", 
             r"$\mathrm{P_p^{true}}$ [GeV/c]"],
             bins=np.linspace(0.0, 3.0, 30),
-            # Same MeV-vs-GeV issue as electron_energy() above: rec.dlp.proton_p_reco
-            # is SPINE's native-units momentum, confirmed in MeV against real data
-            # (mean ~560 there vs. mean ~0.56 GeV on mc.p.totp -- a clean x1000).
-            # These bins are GeV/c, so point at the "_GeV" derived sibling columns
-            # (see evt_derived_kinematics.ensure_derived_trk_kinematics_cols, which
-            # now also derives these the same way it already did for electron
-            # energy). Also fixes a separate stale-name bug: the truth column here
-            # was "proton_p_truth" (with an extra "h"), which doesn't exist on real
-            # data -- the real column is "proton_p_true".
             var_evt_reco_col=('rec', 'dlp', 'proton_p_reco_GeV', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'proton_p_true_GeV', '', '', '', ''),
             var_nu_col=('mc', 'p', 'totp'),
-            xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -214,7 +198,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'del_Tp_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_Tp_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
     
     @classmethod
@@ -244,7 +229,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'del_phi_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_phi_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_phi_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -274,7 +260,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'del_alpha_lp_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_alpha_lp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_alpha_lp_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
     
     @classmethod
@@ -289,7 +276,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'del_phi_lp_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'del_phi_lp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_phi_lp_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -304,7 +292,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'lp_open_angle_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'lp_open_angle_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'lp_open_angle_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -319,7 +308,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'lepton_beam_angle_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$",
+            response_matrix=True
         )
 
     @classmethod
@@ -410,7 +400,8 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_reco_col=('rec', 'dlp', 'subprim_proton_p_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'subprim_proton_p_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'subprim_proton_p_reco', '', ''),
-            xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary Proton p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary Proton p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            response_matrix=True
         )
 
     # ==== additional variables for efficiency inspection ====

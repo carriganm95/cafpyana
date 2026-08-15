@@ -74,6 +74,7 @@ from pyanalib.chunked_selection import (
     sanitize_merged_histdata_finite,
     apply_global_exposure_scales,
 )
+from pyanalib.response_matrix_plotting import response_matrix_from_histdata
 from analysis_village.nueNp0Pi.utils import (
     overlay_hists_from_histdata,
     get_pot_str,
@@ -208,6 +209,111 @@ def _save_fig_and_pkl(fig, save_fig_dir: str, rel_name: str, save_fig: bool, sho
 
 
 # ===========================================================================
+def _apply_ratio_kwargs(hd, var_config, kwargs: dict, disable_ratio_plots: bool) -> dict:
+    """Translate ``var_config.ratio_mode`` (see ``pyanalib.variable_config.VariableConfig``)
+    into the ``ratio``/``ratio_vars``/``ratio_weights``/``ratio_bins``/``ratio_label`` kwargs
+    ``overlay_hists_from_histdata`` (``pyanalib/overlay_plotting.py``) understands. Mutates
+    and returns ``kwargs`` in place; also returned for convenience.
+
+    ``disable_ratio_plots`` (``stages_mod.DISABLE_RATIO_PLOTS``) is a global override: when
+    True, every plot's ratio panel is forced off regardless of ``ratio_mode`` or whatever a
+    ``PlotSpec``'s own ``save_kwargs`` set.
+
+    ``ratio_mode is None`` leaves ``kwargs["ratio"]`` exactly as already set by
+    ``PlotSpec.save_kwargs`` / the caller's own ``kwargs.setdefault("ratio", False)`` --
+    fully backward compatible with plots that predate this mechanism.
+
+    A precedence note on labels: ``kwargs.setdefault("ratio_label", ...)`` below means a
+    ``PlotSpec.save_kwargs["ratio_label"]`` (if a pipeline author ever sets one) always wins
+    over ``var_config.ratio_label``, which in turn wins over the mode's own default string.
+
+    Both data-driven modes reuse ``overlay_hists_from_histdata``'s bin-centers-as-fake-events
+    trick (``ratio_vars=(bin_centers, bin_centers)``, ``ratio_weights=(num_hist, denom_hist)``)
+    to feed already-binned arrays through its per-event ``ratio_vars`` mechanism -- so no
+    further changes to ``pyanalib/overlay_plotting.py`` are needed for either mode.
+    """
+    if disable_ratio_plots:
+        kwargs["ratio"] = False
+        return kwargs
+
+    ratio_mode = getattr(var_config, "ratio_mode", None)
+    if ratio_mode is None:
+        return kwargs
+
+    if ratio_mode == "data_mc":
+        kwargs["ratio"] = True
+        if getattr(var_config, "ratio_label", None):
+            kwargs.setdefault("ratio_label", var_config.ratio_label)
+        return kwargs
+
+    if ratio_mode == "reco_true":
+        if not getattr(hd, "has_truth", False):
+            print(
+                f"[aggregate] WARN: ratio_mode='reco_true' set on "
+                f"{var_config.var_save_name!r} but no truth histogram was filled "
+                f"(has_truth=False) -- skipping ratio panel. ratio_mode must be set on the "
+                f"VariableConfig BEFORE the batch producing this histdata was mapped (see "
+                f"pyanalib.chunked_selection.OverlayHistData.fill_truth_from_df)."
+            )
+            return kwargs
+        bin_centers = 0.5 * (hd.bins[:-1] + hd.bins[1:])
+        total_reco = np.sum(hd.mc_hist, axis=0)
+        kwargs["ratio"] = True
+        kwargs["ratio_vars"] = (bin_centers, bin_centers)
+        kwargs["ratio_weights"] = (total_reco, hd.truth_hist)
+        kwargs["ratio_bins"] = hd.bins
+        kwargs.setdefault("ratio_label", var_config.ratio_label or "Reco/True")
+        return kwargs
+
+    if ratio_mode == "signal_bkgd":
+        ratio_breakdown_type = getattr(var_config, "ratio_breakdown_type", None)
+        if hd.breakdown_type != ratio_breakdown_type:
+            print(
+                f"[aggregate] WARN: ratio_mode='signal_bkgd' on "
+                f"{var_config.var_save_name!r} expects breakdown_type="
+                f"{ratio_breakdown_type!r} but this plot's breakdown_type is "
+                f"{hd.breakdown_type!r} -- skipping ratio panel (the category indices "
+                f"aren't valid for a different breakdown_type's category order/count)."
+            )
+            return kwargs
+        sig_idx = list(getattr(var_config, "ratio_signal_indices", None) or [])
+        bkg_idx = list(getattr(var_config, "ratio_bkgd_indices", None) or [])
+        n_cat = hd.mc_hist.shape[0]
+        if not sig_idx or not bkg_idx:
+            print(
+                f"[aggregate] WARN: ratio_mode='signal_bkgd' on "
+                f"{var_config.var_save_name!r} is missing ratio_signal_indices/"
+                f"ratio_bkgd_indices -- skipping ratio panel."
+            )
+            return kwargs
+        out_of_range = [i for i in sig_idx + bkg_idx if i < 0 or i >= n_cat]
+        if out_of_range:
+            print(
+                f"[aggregate] WARN: ratio_mode='signal_bkgd' on "
+                f"{var_config.var_save_name!r} has ratio_signal_indices/ratio_bkgd_indices "
+                f"{out_of_range} out of range for this plot's {n_cat} categories -- "
+                f"skipping ratio panel."
+            )
+            return kwargs
+        bin_centers = 0.5 * (hd.bins[:-1] + hd.bins[1:])
+        sig = np.sum(hd.mc_hist[sig_idx], axis=0)
+        bkg = np.sum(hd.mc_hist[bkg_idx], axis=0)
+        kwargs["ratio"] = True
+        kwargs["ratio_vars"] = (bin_centers, bin_centers)
+        kwargs["ratio_weights"] = (sig, bkg)
+        kwargs["ratio_bins"] = hd.bins
+        kwargs.setdefault("ratio_label", var_config.ratio_label or "S/B")
+        return kwargs
+
+    print(
+        f"[aggregate] WARN: unknown ratio_mode={ratio_mode!r} on "
+        f"{var_config.var_save_name!r} (expected None/'data_mc'/'reco_true'/'signal_bkgd') "
+        f"-- ignoring, ratio panel left as previously set."
+    )
+    return kwargs
+
+
+# ===========================================================================
 def render_overlay_plots(
     merged: dict,
     plot_label_map: dict,
@@ -293,6 +399,12 @@ def render_overlay_plots(
         kwargs.pop("show_cosmic_model_unc", None)
         kwargs.pop("legend_percentages", None)
 
+        # VariableConfig.ratio_mode ("data_mc" / "reco_true" / "signal_bkgd") -> the
+        # ratio/ratio_vars/ratio_weights/ratio_bins/ratio_label kwargs overlay_hists_from_histdata
+        # understands, or a global no-op if stages_mod.DISABLE_RATIO_PLOTS is set. See
+        # _apply_ratio_kwargs's own docstring for the full precedence rules.
+        kwargs = _apply_ratio_kwargs(hd, ps.var_config, kwargs, stages_mod.DISABLE_RATIO_PLOTS)
+
         # Pre-saved fractional covariance on the syst disk (GENIE / flux / …).
         if kwargs.get("syst") is None and syst_disk_root is not None:
             _, cov_disk = get_syst_unc(
@@ -324,6 +436,67 @@ def render_overlay_plots(
             f"{len(uniq)} distinct var_save_name): {', '.join(uniq)}",
             flush=True,
         )
+
+
+# ===========================================================================
+def render_response_matrix_plots(merged: dict, save_fig_dir: str, save_fig: bool, show_fig: bool):
+    """Render the optional true-vs-reco response-matrix heatmap (see
+    ``pyanalib.response_matrix_plotting.response_matrix_from_histdata``) for every plot whose
+    ``VariableConfig.response_matrix`` is True (``pyanalib.variable_config``).
+
+    Skips (with a WARN, not a crash) any such variable whose histdata never had its response
+    matrix filled at map time -- ``response_matrix`` must be set on the VariableConfig BEFORE
+    the batch producing this histdata was mapped, same caveat as ``ratio_mode="reco_true"``
+    (see ``pyanalib.chunked_selection.OverlayHistData.fill_response_from_df``).
+
+    ``stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS`` is a global override: when True, this whole
+    function is a no-op (see ``config/stages.py``).
+    """
+    if stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS:
+        return
+
+    pipeline = build_pipeline()
+    spec_lookup = {}
+    for stage in pipeline:
+        for ps in stage.plots:
+            key = (stage.key, ChunkRunner.plot_key(stage.key, ps))
+            spec_lookup[key] = ps
+
+    for key, hd in merged["histdata"].items():
+        ps = spec_lookup.get(key)
+        if ps is None or not getattr(ps.var_config, "response_matrix", False):
+            continue
+        if not getattr(hd, "has_response", False):
+            print(
+                f"[aggregate] WARN: response_matrix=True on "
+                f"{ps.var_config.var_save_name!r} but no response histogram was filled "
+                f"(has_response=False) -- skipping. response_matrix must be set on the "
+                f"VariableConfig BEFORE the batch producing this histdata was mapped (see "
+                f"pyanalib.chunked_selection.OverlayHistData.fill_response_from_df)."
+            )
+            continue
+
+        rel_name = (
+            f"response_matrix/response_matrix_{ps.var_config.var_save_name}"
+            + (("_" + ps.name_suffix) if ps.name_suffix else "")
+        )
+        save_name = path.join(save_fig_dir, "image", rel_name)
+        makedirs(path.dirname(save_name), exist_ok=True)
+        try:
+            result = response_matrix_from_histdata(
+                hd, var_config=ps.var_config,
+                save_fig=save_fig, save_name=save_name, plot=show_fig,
+            )
+            if not result.get("ok"):
+                continue
+            if save_fig and result.get("fig") is not None:
+                pkl_path = path.join(save_fig_dir, "pkl", rel_name + ".pkl")
+                makedirs(path.dirname(pkl_path), exist_ok=True)
+                with open(pkl_path, "wb") as f:
+                    pickle.dump(result["fig"], f)
+        except Exception as e:
+            print(f"[aggregate] WARN: response matrix plot {key} failed: {e}")
+            plt.close('all')
 
 
 # ===========================================================================
@@ -916,7 +1089,9 @@ def aggregate_and_render(
     ``selection_<var>.png`` plots (see ``EVT_BREAKDOWN_DIR_NAME``), those four would
     otherwise be recomputed and rewritten with numerically-identical content every time,
     for no reason. ``render_overlay_plots`` (which renders both the EVT_BREAKDOWN
-    selection plots and the always-present pdg particle-KE plot) always runs.
+    selection plots and the always-present pdg particle-KE plot) always runs, as does
+    ``render_response_matrix_plots`` (renders a plot per ``VariableConfig.response_matrix=True``
+    variable; a no-op if none are set, or if ``stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS``).
 
     Single implementation for the whole reduce pass -- both the CLI (``main``,
     below) and ``pyanalib.event_selection_pipeline.EventSelectionPipeline.run_aggregate``
@@ -995,6 +1170,9 @@ def aggregate_and_render(
         merged, plot_label_map={}, save_fig_dir=save_fig_dir,
         pot_str=pot_str, save_fig=save_fig, show_fig=show_fig,
         syst_disk_root=resolved_syst_disk_root,
+    )
+    render_response_matrix_plots(
+        merged, save_fig_dir=save_fig_dir, save_fig=save_fig, show_fig=show_fig,
     )
     if not render_breakdown_independent:
         print(

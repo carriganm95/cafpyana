@@ -215,6 +215,24 @@ class OverlayHistData:
     dirt_err2: np.ndarray = field(default=None)
     data_hist: np.ndarray = field(default=None)
     data_err2: np.ndarray = field(default=None)
+    # Optional, MC-only: total (NOT broken down by category) truth-side histogram, used
+    # only by the "reco_true" ratio-panel mode (see pyanalib.variable_config.VariableConfig
+    # and pyanalib.overlay_plotting's ratio_vars/ratio_weights). Filled from the same
+    # already-selected "mc" df used for mc_hist, just via var_evt_truth_col instead of
+    # var_evt_reco_col -- so it's directly comparable to sum(mc_hist, axis=0) (same
+    # selected events, same weights, same bins). See fill_truth_from_df below.
+    truth_hist: np.ndarray = field(default=None)      # (n_bin,)
+    truth_err2: np.ndarray = field(default=None)
+    # Optional, MC-only: true(x)-vs-reco(y) 2D histogram for VariableConfig.response_matrix
+    # (see pyanalib.variable_config.VariableConfig and pyanalib.response_matrix_plotting).
+    # Indexed [reco_bin, true_bin], i.e. response_hist[i, j] is the POT-weighted count of
+    # events whose true value landed in bin j AND whose reco value landed in bin i -- same
+    # layout matplotlib's pcolormesh/imshow expect (row=y=reco, col=x=true). Lazily allocated
+    # on first fill (see fill_response_from_df) since VariableConfig.response_matrix_bins can
+    # override the bin edges used here to differ from `bins` above (e.g. a coarser NxN grid),
+    # so the shape isn't known until the first event actually needing it is seen.
+    response_hist: np.ndarray = field(default=None)   # (n_bin, n_bin), lazily allocated
+    response_bins: np.ndarray = field(default=None)    # bin edges actually used above
     # MC-only: optional per-syst universe histograms for chunked syst covariance:
     #   mc_univ_hist[syst_tag] -> (n_univ, n_cat, n_bin), same category order as mc_hist.
     mc_univ_hist: Optional[Dict[str, np.ndarray]] = None
@@ -223,6 +241,8 @@ class OverlayHistData:
     has_offbeam: bool = False
     has_dirt: bool = False
     has_data: bool = False
+    has_truth: bool = False
+    has_response: bool = False
 
     def __post_init__(self):
         n_cat = self.n_cat
@@ -242,6 +262,9 @@ class OverlayHistData:
         if self.data_hist is None:
             self.data_hist = np.zeros(n_bin)
             self.data_err2 = np.zeros(n_bin)
+        if self.truth_hist is None:
+            self.truth_hist = np.zeros(n_bin)
+            self.truth_err2 = np.zeros(n_bin)
 
     # ----- accumulation ---------------------------------------------------
     def fill_from_df(
@@ -352,6 +375,65 @@ class OverlayHistData:
             target_h += h
             target_e2 += e2
 
+    def fill_truth_from_df(self, df: pd.DataFrame, truth_col):
+        """Fill the optional total (unbroken-down-by-category) truth-side histogram.
+
+        Only meaningful for MC -- there is no "truth" for data/intime/dirt/offbeam, so
+        callers should only invoke this for the ``sample == "mc"`` chunk. Pass the SAME
+        already-selected ``df`` used for the matching ``fill_from_df(..., "mc", ...)``
+        call (i.e. the same ``PlotSpec.selector`` output) so both histograms describe the
+        same selected events, weighted identically -- the only difference is which column
+        is histogrammed (``truth_col`` here vs. ``var_evt_reco_col`` in ``fill_from_df``).
+
+        Sets ``has_truth = True`` even for an empty ``df``, matching ``fill_from_df``'s
+        convention of marking a sample "used" (vs. "never attempted") regardless of
+        whether any events actually landed in a bin.
+        """
+        self.has_truth = True
+        if df is None or len(df) == 0:
+            return
+        var, weights = get_clipped_evts(df, truth_col, self.bins)
+        weights = np.asarray(weights, dtype=float)
+        h, _ = np.histogram(var, bins=self.bins, weights=weights)
+        e2, _ = np.histogram(var, bins=self.bins, weights=np.square(weights))
+        self.truth_hist += h
+        self.truth_err2 += e2
+
+    def fill_response_from_df(self, df: pd.DataFrame, truth_col, reco_col, bins=None):
+        """Fill the optional true-vs-reco 2D "response matrix" histogram.
+
+        Only meaningful for MC -- callers should only invoke this for the ``sample == "mc"``
+        chunk (mirrors ``fill_truth_from_df``'s convention). Pass the SAME already-selected
+        ``df`` used for the matching ``fill_from_df(..., "mc", ...)`` call so the true/reco
+        pair histogrammed here is drawn from the same selected events, weighted identically.
+
+        ``bins``: optional override (``VariableConfig.response_matrix_bins``) for the 2D grid;
+        defaults to ``self.bins`` (the same bins the 1D overlay histogram uses) if omitted.
+        The bins actually used are recorded in ``response_bins`` on first fill and reused for
+        every subsequent chunk -- callers must keep passing the same ``bins`` across chunks of
+        the same run (this is guaranteed as long as ``VariableConfig.response_matrix_bins``
+        doesn't change mid-run, same requirement as every other per-variable setting here).
+
+        Sets ``has_response = True`` even for an empty ``df``, matching ``fill_truth_from_df``'s
+        convention of marking a mode "used" (vs. "never attempted") regardless of whether any
+        events actually landed in a bin.
+        """
+        self.has_response = True
+        if df is None or len(df) == 0:
+            return
+        use_bins = np.asarray(bins if bins is not None else self.bins)
+        if self.response_hist is None:
+            n_bin = len(use_bins) - 1
+            self.response_hist = np.zeros((n_bin, n_bin))
+            self.response_bins = use_bins.copy()
+        true_var, weights = get_clipped_evts(df, truth_col, use_bins)
+        reco_var, _ = get_clipped_evts(df, reco_col, use_bins)
+        weights = np.asarray(weights, dtype=float)
+        # histogram2d(x, y, bins=[bx, by]) returns H indexed [ix, iy]; passing x=reco,
+        # y=true gives H[reco_bin, true_bin], matching response_hist's documented layout.
+        h, _, _ = np.histogram2d(reco_var, true_var, bins=[use_bins, use_bins], weights=weights)
+        self.response_hist += h
+
     def __iadd__(self, other: "OverlayHistData"):
         assert self.var_save_name == other.var_save_name
         assert self.breakdown_type == other.breakdown_type
@@ -366,6 +448,26 @@ class OverlayHistData:
         self.dirt_err2 += other.dirt_err2
         self.data_hist += other.data_hist
         self.data_err2 += other.data_err2
+        self.truth_hist += getattr(other, "truth_hist", 0.0)
+        self.truth_err2 += getattr(other, "truth_err2", 0.0)
+        self.has_truth = self.has_truth or getattr(other, "has_truth", False)
+        orh = getattr(other, "response_hist", None)
+        if orh is not None:
+            orh = np.asarray(orh, dtype=float)
+            if self.response_hist is None:
+                self.response_hist = orh.copy()
+                self.response_bins = np.asarray(
+                    getattr(other, "response_bins", self.bins)
+                ).copy()
+            else:
+                if self.response_hist.shape != orh.shape:
+                    raise ValueError(
+                        f"response_hist shape mismatch in merge for "
+                        f"{self.var_save_name!r}: {self.response_hist.shape} vs {orh.shape} "
+                        f"(response_matrix_bins must be consistent across the whole run)"
+                    )
+                self.response_hist += orh
+        self.has_response = self.has_response or getattr(other, "has_response", False)
         ou = getattr(other, "mc_univ_hist", None)
         if ou:
             if self.mc_univ_hist is None:
@@ -793,6 +895,26 @@ class ChunkRunner:
             get_cuts_fn=get_cuts_fn if self.sample == "mc" else None,
             mc_univ_syst_tags=tags,
         )
+        # Optional truth-side histogram for VariableConfig.ratio_mode == "reco_true"
+        # (pyanalib.variable_config) -- MC only, same selected df as mc_hist above, just a
+        # different column, not broken down by category. Gated on ratio_mode so plots that
+        # don't use it pay no extra cost. See OverlayHistData.fill_truth_from_df.
+        if self.sample == "mc" and getattr(ps.var_config, "ratio_mode", None) == "reco_true":
+            truth_col = getattr(ps.var_config, "var_evt_truth_col", None)
+            if truth_col is not None:
+                self.histdata[key].fill_truth_from_df(df, truth_col)
+        # Optional true-vs-reco response-matrix histogram for VariableConfig.response_matrix
+        # (pyanalib.variable_config) -- MC only, same selected df as mc_hist above, paired
+        # true/reco columns into a 2D histogram. Gated on response_matrix so plots that don't
+        # opt in pay no extra cost. See OverlayHistData.fill_response_from_df.
+        if self.sample == "mc" and getattr(ps.var_config, "response_matrix", False):
+            truth_col = getattr(ps.var_config, "var_evt_truth_col", None)
+            if truth_col is not None:
+                rm_bins = getattr(ps.var_config, "response_matrix_bins", None)
+                self.histdata[key].fill_response_from_df(
+                    df, truth_col, ps.var_config.var_evt_reco_col,
+                    bins=(np.asarray(rm_bins) if rm_bins is not None else None),
+                )
 
     def _fill_breakdown(self, stage_key: str, state: Dict[str, pd.DataFrame]):
         if stage_key not in self.bar:
@@ -1116,6 +1238,12 @@ def sanitize_merged_histdata_finite(merged: Dict[str, Any]) -> Tuple[int, int]:
                     np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0),
                 )
                 patched_here = True
+        # response_hist is lazily allocated (None until fill_response_from_df's first call),
+        # unlike the always-zero-inited arrays above, so it's checked separately.
+        rh = getattr(hd, "response_hist", None)
+        if rh is not None and np.issubdtype(rh.dtype, np.number) and not np.all(np.isfinite(rh)):
+            hd.response_hist = np.nan_to_num(rh, nan=0.0, posinf=0.0, neginf=0.0)
+            patched_here = True
         if patched_here:
             n_hd += 1
 
@@ -1200,6 +1328,9 @@ def apply_global_exposure_scales(
             sf = sm["scale_mc"]
             for _k in hd.mc_univ_hist:
                 hd.mc_univ_hist[_k] = np.asarray(hd.mc_univ_hist[_k], dtype=float) * sf
+        if hd.has_mc and getattr(hd, "response_hist", None) is not None:
+            # MC-only, same POT-weighted-sum convention as mc_hist -- scale identically.
+            hd.response_hist = np.asarray(hd.response_hist, dtype=float) * sm["scale_mc"]
 
     for by_bt in merged["bar"].values():
         for bb in by_bt.values():

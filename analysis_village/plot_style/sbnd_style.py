@@ -135,13 +135,26 @@ def get_textloc_x(values, bins, textloc=[0.05, 0.55]):
 
 
 def add_approval_text(approval, textloc_x, textloc_y, textloc_ha, fontsize=20):
-    """Add an 'SBND Internal'/'SBND Preliminary' watermark to the current figure's first axes."""
+    """Add an 'SBND Internal'/'SBND Preliminary'/'SBND Work in Progress' watermark to the
+    current figure's first axes.
+
+    ``"wip"`` was added alongside the original ``"internal"``/``"preliminary"`` modes so that
+    plots wanting a "Work in Progress" tag (e.g.
+    ``pyanalib.response_matrix_plotting.response_matrix_from_histdata``) render it through this
+    same function -- same position/fontsize/mathtext-bold-SBND styling as every other plot in
+    the pipeline calls this with -- instead of a separately-styled one-off (see
+    ``sbnd_wip`` above, which has its own different position/fontsize/font-family defaults and
+    is not used by the render pipeline).
+    """
     if approval == "internal":
         approval_text = r"$\mathbf{SBND}$ Internal"
         textcolor = 'rosybrown'
     elif approval == "preliminary":
         approval_text = r"$\mathbf{SBND}$ Preliminary"
         textcolor = 'gray'
+    elif approval == "wip":
+        approval_text = r"$\mathbf{SBND}$ Work in Progress"
+        textcolor = 'black'
     else:
         return  # don't add anything
 

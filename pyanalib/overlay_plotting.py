@@ -101,6 +101,47 @@ def _var_weights_for_cut(var, weights, cut):
     return v[mask], w[mask]
 
 
+def _overlay_hist_weighted(values, weights, bins):
+    """Weighted 1D histogram + per-bin stat. error (``sqrt(sum(weights**2))``)."""
+    values = _as_1d_float_array(values, name="ratio_values")
+    if weights is None:
+        weights = np.ones_like(values)
+    else:
+        weights = _as_1d_float_array(weights, name="ratio_weights")
+    if len(weights) != len(values):
+        raise ValueError(
+            "ratio variable/weight length mismatch: values=%d weights=%d"
+            % (len(values), len(weights))
+        )
+    hist, _ = np.histogram(values, bins=bins, weights=weights)
+    err2, _ = np.histogram(values, bins=bins, weights=weights ** 2)
+    return hist.astype(float), np.sqrt(err2)
+
+
+def _overlay_custom_ratio(num_values, denom_values, num_weights, denom_weights, bins):
+    """Histogram two raw per-event variables (e.g. reco/true) and return their ratio.
+
+    Returns ``(num_hist, denom_hist, ratio, ratio_err)``, all length ``len(bins) - 1``.
+    ``ratio_err`` propagates the two histograms' independent Poisson-style stat. errors
+    in quadrature (relative errors added in quadrature, scaled by the ratio) -- an
+    approximation that ignores any event-by-event correlation between numerator and
+    denominator (e.g. the same event's reco and true value), so it's a useful quick-look
+    uncertainty rather than a rigorous one.
+    """
+    num_hist, num_err = _overlay_hist_weighted(num_values, num_weights, bins)
+    denom_hist, denom_err = _overlay_hist_weighted(denom_values, denom_weights, bins)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(denom_hist != 0, num_hist / denom_hist, 0.0)
+        num_rel_err2 = np.where(num_hist != 0, (num_err / np.where(num_hist != 0, num_hist, 1.0)) ** 2, 0.0)
+        denom_rel_err2 = np.where(
+            denom_hist != 0, (denom_err / np.where(denom_hist != 0, denom_hist, 1.0)) ** 2, 0.0
+        )
+        ratio_err = np.abs(ratio) * np.sqrt(num_rel_err2 + denom_rel_err2)
+    ratio = np.nan_to_num(ratio, nan=0.0, posinf=0.0, neginf=0.0)
+    ratio_err = np.nan_to_num(ratio_err, nan=0.0, posinf=0.0, neginf=0.0)
+    return num_hist, denom_hist, ratio, ratio_err
+
+
 def get_clipped_evts(
     df, var_col, bins, verbose=False, var_save_name=None,
     *,
@@ -333,6 +374,11 @@ def overlay_hists_from_histdata(
     plot_labels=["", "", ""],
     ax_ylim_ratio=1.5,
     ratio=False,
+    ratio_vars: Optional[Tuple[Any, Any]] = None,
+    ratio_weights: Optional[Tuple[Any, Any]] = None,
+    ratio_bins: Optional[Any] = None,
+    ratio_label: Optional[str] = None,
+    ratio_ylim: Optional[Tuple[float, float]] = None,
     density=False,
     syst=None,
     syst_kind="xsec",
@@ -381,6 +427,20 @@ def overlay_hists_from_histdata(
         ``histdata.breakdown_type`` isn't a key.
     var_config : VariableConfig
         Carries bins, labels, var_save_name (for "integrated" formatting).
+    ratio, ratio_vars, ratio_weights, ratio_bins, ratio_label, ratio_ylim
+        Control the bottom ratio subplot (only drawn when ``ratio=True``). By default
+        (``ratio_vars=None``) the panel shows Data/MC, computed from ``histdata`` exactly
+        as before -- fully backward compatible. Pass ``ratio_vars=(num_values, denom_values)``
+        (two raw per-event 1D arrays, e.g. a reco column and the matching truth column) to
+        instead show the ratio of those two variables' histograms, e.g. Reco/True. Optional
+        ``ratio_weights=(num_weights, denom_weights)`` supplies per-event weights for each
+        (defaults to unweighted, i.e. all ones); ``ratio_bins`` overrides the bin edges used
+        to histogram ``ratio_vars`` (defaults to this plot's ``bins``, which is normally
+        correct since reco/truth share ``var_config.bins``). ``ratio_label`` sets the panel's
+        y-axis label (defaults to ``"Data/MC"`` in the built-in mode, ``"Ratio"`` in custom
+        mode). ``ratio_ylim`` overrides the panel's y-limits (default stays ``(0, 2)``, same
+        as before). In custom mode the Data/MC syst band and data points are not drawn on
+        the ratio panel -- only the custom ratio -- since they describe a different quantity.
     syst_default_root, syst_category_summary_loader
         Passed through to :func:`pyanalib.syst_loading.load_overlay_syst_cov_frac` when
         ``syst`` is omitted and ``load_syst_from_summary`` is True. Both required for that
@@ -564,18 +624,22 @@ def overlay_hists_from_histdata(
         )
 
     # ============ plot template ============
+    custom_ratio = ratio_vars is not None
+    resolved_ratio_label = ratio_label if ratio_label is not None else ("Ratio" if custom_ratio else "Data/MC")
+    resolved_ratio_ylim = ratio_ylim if ratio_ylim is not None else (0., 2.)
     if ratio:
         fig, axs = plt.subplots(2, 1, figsize=(8.5, 8.5),
                                sharex=True, gridspec_kw={'height_ratios': [4, 1]})
         ax, ax_r = axs[0], axs[1]
         fig.subplots_adjust(hspace=0.1)
         ax_r.axhline(1.0, color='red', linestyle='--', linewidth=1)
-        ax_r.set_ylim(0., 2.)
+        ax_r.set_ylim(*resolved_ratio_ylim)
         ax_r.set_xlabel(plot_labels[0], fontsize=20)
-        ax_r.set_ylabel("Data/MC", fontsize=20)
-        ax_r.grid(True)
-        ax_r.grid(which='minor', linestyle=':', linewidth=0.5, color='gray', alpha=0.5)
-        ax_r.minorticks_on()
+        ax_r.set_ylabel(resolved_ratio_label, fontsize=16)
+        # Solid gridlines on both axes (horizontal + vertical), major ticks only --
+        # minor gridlines were tried and reverted per explicit request (too dense;
+        # the sparser major-only spacing from the upper panel was preferred).
+        ax_r.grid(True, linestyle='-')
         ax_r.tick_params(axis='both', which='major', labelsize=15)
         ax_r.tick_params(axis='both', which='minor', labelsize=13)
     else:
@@ -587,6 +651,11 @@ def overlay_hists_from_histdata(
     ax.set_title(plot_labels[2], fontsize=20)
     ax.tick_params(axis='both', which='major', labelsize=15)
     ax.tick_params(axis='both', which='minor', labelsize=13)
+    # Solid gridlines on both axes (horizontal + vertical) on the main/upper panel too
+    # (matches the ratio panel below it, when present) -- applies to both the ratio and
+    # non-ratio (single-panel) layouts since this runs after the if/else above.
+    # Major ticks only (no minorticks_on()) -- keeps the sparser gridline spacing.
+    ax.grid(True, linestyle='-')
 
     # ============ plot histograms ============
     mc_stack = None
@@ -730,7 +799,27 @@ def overlay_hists_from_histdata(
                     label='Data', zorder=10)
 
     # Ratio panel
-    if ratio:
+    ratio_num_hist = ratio_denom_hist = ratio_vals = ratio_err = None
+    if ratio and custom_ratio:
+        # Custom mode: ratio of two caller-supplied per-event variables (e.g. Reco/True)
+        # instead of the built-in Data/MC ratio. Deliberately skips the Data/MC syst band
+        # and data errorbar above -- those describe MC uncertainty / data stats, not the
+        # relationship between the two arbitrary variables being compared here.
+        num_values, denom_values = ratio_vars
+        if ratio_weights is not None:
+            num_weights, denom_weights = ratio_weights
+        else:
+            num_weights = denom_weights = None
+        _ratio_bins = np.asarray(ratio_bins) if ratio_bins is not None else bins
+        ratio_num_hist, ratio_denom_hist, ratio_vals, ratio_err = _overlay_custom_ratio(
+            num_values, denom_values, num_weights, denom_weights, _ratio_bins
+        )
+        _ratio_bin_centers = 0.5 * (_ratio_bins[:-1] + _ratio_bins[1:])
+        ax_r.errorbar(_ratio_bin_centers, ratio_vals, yerr=ratio_err,
+                      fmt='o', color='black',
+                      markersize=5, capsize=3, linewidth=1.5, zorder=10)
+        ax_r.set_xlim(_ratio_bins[0], _ratio_bins[-1])
+    elif ratio:
         if syst is not None and total_mc is not None:
             if syst_decomp == False:
                 mc_content_ratio = np.ones_like(total_mc)
@@ -1001,6 +1090,12 @@ def overlay_hists_from_histdata(
             "chi2_shape_val": chi2_shape_val,
             "p_val_shape": p_val_shape,
             "ndof_shape": ndof_shape,
+            # Custom ratio-panel outputs (only populated when ratio=True and ratio_vars
+            # was given -- see the ``ratio_vars``/``ratio_weights`` docstring entry above).
+            "ratio_num_hist": ratio_num_hist,
+            "ratio_denom_hist": ratio_denom_hist,
+            "ratio_vals": ratio_vals,
+            "ratio_err": ratio_err,
             # The Figure object itself -- note it's already been through plt.close()
             # above when plot=False (the batch-render default). That's harmless for
             # later use: close() just detaches it from pyplot's global figure
