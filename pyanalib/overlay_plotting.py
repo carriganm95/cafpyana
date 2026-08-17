@@ -1021,6 +1021,16 @@ def overlay_hists_from_histdata(
                     'head_length': 0.03 * (ax.get_xlim()[1] - ax.get_xlim()[0]),
                     'length_includes_head': True
                 }
+                # clip_on=False: the arrow's fixed length (18% of the axis width, set
+                # above) can push its tip past the axis edge when the cut threshold
+                # sits near xlim -- e.g. a "keep larger" (direction=1) cut at x=0.9 on
+                # a 0-1 axis wants to end at 1.08. With clipping on, matplotlib just
+                # truncates the arrow at the boundary, which can chop off the
+                # arrowhead entirely and leave what looks like a stray red bar with no
+                # direction indicator. Since this arrow's only job is to show which
+                # side of the dashed threshold line survives the cut, letting it
+                # overflow past the plot box (rather than disappear) keeps that
+                # meaning visible even when there isn't enough room inside the axes.
                 if direction == 0:
                     ax.arrow(v[0], arrow_params['y'], -arrow_params['dx'], 0,
                              width=arrow_params['width'],
@@ -1028,7 +1038,7 @@ def overlay_hists_from_histdata(
                              head_width=arrow_params['head_width'],
                              head_length=arrow_params['head_length'],
                              length_includes_head=arrow_params['length_includes_head'],
-                             clip_on=True,
+                             clip_on=False,
                              zorder=60)
                 elif direction == 1:
                     ax.arrow(v[0], arrow_params['y'], arrow_params['dx'], 0,
@@ -1037,7 +1047,7 @@ def overlay_hists_from_histdata(
                              head_width=arrow_params['head_width'],
                              head_length=arrow_params['head_length'],
                              length_includes_head=arrow_params['length_includes_head'],
-                             clip_on=True,
+                             clip_on=False,
                              zorder=60)
 
     # textboxes

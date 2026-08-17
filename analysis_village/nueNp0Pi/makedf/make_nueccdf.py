@@ -223,6 +223,7 @@ def make_nueNp0Pi_df(f):
     subprim_proton_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_p_r = _ptmp.rec.dlp.particles.p.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
+    photon_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primphoton_rows_r).groupby(level=int_levels).first()
 
     ele_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primele_rows_t).groupby(level=int_levels).first()
     muon_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
@@ -231,6 +232,7 @@ def make_nueNp0Pi_df(f):
     proton_p_t = _ptmp.rec.dlp_true.particles.p.where(primproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_p_t = _ptmp.rec.dlp_true.particles.p.where(subprimproton_rows_t).groupby(level=int_levels).first()
+    photon_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primphoton_rows_t).groupby(level=int_levels).first()
 
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
     # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
@@ -241,6 +243,14 @@ def make_nueNp0Pi_df(f):
     muon_count_reco     = ((_pdg_r == 13)   & (_valid_r == 1)).groupby(level=int_levels).sum()
     pion_count_reco     = ((_pdg_r == 211)  & (_valid_r == 1)).groupby(level=int_levels).sum()
     proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
+
+    _pdg_t              = abs(_ptmp.rec.dlp_true.particles.pdg_code)
+    _valid_t            = _ptmp.rec.dlp_true.particles.is_valid
+    photon_count_true   = ((_pdg_t == 22)   & (_valid_t == 1)).groupby(level=int_levels).sum()
+    electron_count_true = ((_pdg_t == 11)   & (_valid_t == 1)).groupby(level=int_levels).sum()
+    muon_count_true     = ((_pdg_t == 13)   & (_valid_t == 1)).groupby(level=int_levels).sum()
+    pion_count_true     = ((_pdg_t == 211)  & (_valid_t == 1)).groupby(level=int_levels).sum()
+    proton_count_true   = ((_pdg_t == 2212) & (_valid_t == 1)).groupby(level=int_levels).sum()
 
     tki_mc = get_tki_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels)
 
@@ -324,6 +334,7 @@ def make_nueNp0Pi_df(f):
                         ('proton_p_true',        proton_p_t),
                         ('subprim_proton_energy_true', subprim_proton_energy_t),
                         ('subprim_proton_p_true', subprim_proton_p_t),
+                        ('photon_energy_true',   photon_energy_t),
 
                         ('del_alpha_lp_true', tki_lp_mc_true['del_alpha']),
                         ('del_phi_lp_true',   tki_lp_mc_true['del_phi']),
@@ -373,7 +384,8 @@ def make_nueNp0Pi_df(f):
                         ('subprim_proton_energy_reco', subprim_proton_energy_r),
                         ('subprim_proton_p_reco', subprim_proton_p_r),
                         ('subprim_proton_softmax_reco', subprim_proton_softmax_r),
-                        
+                        ('photon_energy_reco',   photon_energy_r),
+
                         ('del_alpha_lp_reco', tki_lp_mc['del_alpha']),
                         ('del_phi_lp_reco',   tki_lp_mc['del_phi']),
                         ('del_Tp_lp_reco',    tki_lp_mc['del_Tp']),

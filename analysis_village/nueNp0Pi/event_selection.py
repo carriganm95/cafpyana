@@ -53,7 +53,13 @@ import pandas as pd
 
 sys.path.append(path.dirname(path.dirname(path.dirname(path.abspath(__file__)))))
 
-from analysis_village.nueNp0Pi.config.stages import build_pipeline, EFFICIENCY_VARS, BREAKDOWN_REGISTRY
+from analysis_village.nueNp0Pi.config.stages import build_pipeline, BREAKDOWN_REGISTRY
+# Imported as a module (not `from ... import EFFICIENCY_VARS/DISABLE_EFFICIENCY_ACCUMULATION`)
+# so build_runner()/run_batch_selection() below pick up whatever a notebook cell most recently
+# set on the module -- a plain name import would freeze in the value from whenever this file
+# was first imported, same reasoning as EVT_BREAKDOWN_TYPE/N_MINUS_1_* in
+# event_selection_aggregate.py.
+import analysis_village.nueNp0Pi.config.stages as stages_mod
 from analysis_village.nueNp0Pi.selections import SIGNAL_MASK_FN
 from analysis_village.nueNp0Pi.config.datasets import KEYS2LOAD
 from analysis_village.nueNp0Pi.dataset_paths import iter_event_selection_df_paths, default_syst_disk_root
@@ -133,11 +139,21 @@ def build_runner(
     ``mc_univ_syst_tags``: optional tuple of MC multi-universe syst names (e.g.
     ``("Flux", "G4", "GENIE")``) whose columns ``mc[s]['univ_i']`` are summed into
     chunked histograms for later fractional covariance (see aggregate flag).
+
+    Reads ``config.stages.DISABLE_EFFICIENCY_ACCUMULATION`` live: when True, this
+    ChunkRunner gets ``efficiency_vars=[]`` instead of ``EFFICIENCY_VARS``, so
+    ``_fill_efficiency`` never fills anything (a no-op per stage) -- useful when a batch
+    is only being (re-)mapped to pick up new N-1 / EVT_BREAKDOWN plots and the
+    efficiency-curve accumulation isn't needed for that run. See
+    ``run_batch_selection`` for the matching ``mcnu``-load skip.
     """
+    efficiency_vars = (
+        [] if stages_mod.DISABLE_EFFICIENCY_ACCUMULATION else stages_mod.EFFICIENCY_VARS
+    )
     return ChunkRunner(
         sample=sample,
         stages=build_pipeline(),
-        efficiency_vars=EFFICIENCY_VARS,
+        efficiency_vars=efficiency_vars,
         mc_univ_syst_tags=mc_univ_syst_tags,
     )
 
@@ -305,7 +321,15 @@ def run_batch_selection(
 ) -> Dict[str, Any]:
     """Load a file batch, run the notebook pipeline, write one pickle."""
     keys = list(KEYS2LOAD)
-    load_mcnu = sample == "mc" and any(hdf_has_mcnu(f) for f in df_files)
+    # ``mcnu`` is only ever consumed by EfficiencyAccumulator's fill_denominator_from_mcnu
+    # path, which nueNp0Pi's ChunkRunner never uses anyway (efficiency_denom_from_first_stage
+    # defaults to True there -- fill_from_mcnu is unconditionally False). Skipping the load
+    # entirely when DISABLE_EFFICIENCY_ACCUMULATION is set avoids that (already-unused) I/O too.
+    load_mcnu = (
+        sample == "mc"
+        and not stages_mod.DISABLE_EFFICIENCY_ACCUMULATION
+        and any(hdf_has_mcnu(f) for f in df_files)
+    )
     keys_load = keys + (["mcnu"] if load_mcnu else [])
 
     mc_univ_tags = tuple(mc_univ_syst_tags) if sample == "mc" else ()

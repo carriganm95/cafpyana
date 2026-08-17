@@ -138,3 +138,15 @@ MU_PLO_TH     = 0.22
 MU_PHI_TH     = 1
 P_PLO_TH      = 0.3
 P_PHI_TH      = 1
+
+# nueNp0Pi PID/kinematic selection cuts (config/stages.py's build_pipeline() reco-cut
+# stages, in analysis_village.nueNp0Pi.selections). Named here (instead of literals in
+# selections.py) so config/stages.py's N_MINUS_1_VLINES can draw the exact same cut
+# value as a threshold marker on the corresponding N-1 diagnostic plot -- single source
+# of truth for "what is this cut's value" shared between the selection logic and the
+# plot that visualizes it.
+ELE_SOFTMAX_TH  = 0.9   # electron_softmax(): ele_softmax_reco > this
+ELE_PRIMARY_TH  = 0.99  # electron_primary(): ele_primary_reco > this
+P_SOFTMAX_TH    = 0.75  # proton_softmax(): proton_softmax_reco > this
+ELE_VTXDIST_TH  = 3.5   # electron_vertex_distance(): ele_vertex_distance_reco < this (cm)
+ELE_DEDX_TH     = 4     # electron_dedx(): ele_dedx_reco < this (MeV/cm)

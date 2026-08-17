@@ -12,10 +12,20 @@ analysis_village.nueNp0Pi.config.stages.
 import pandas as pd
 import pytest
 
+import analysis_village.nueNp0Pi.config.stages as stages_mod
 from analysis_village.nueNp0Pi.selections import SIGNAL_MASK_FN
 from analysis_village.nueNp0Pi.config.stages import build_pipeline, BREAKDOWN_REGISTRY
 from analysis_village.nueNp0Pi.event_selection import ChunkRunner, build_runner
 from pyanalib.chunked_selection import multicol_get_series
+
+
+@pytest.fixture(autouse=True)
+def _reset_disable_efficiency_accumulation():
+    """Plain module attribute, same notebook-configurable pattern as
+    N_MINUS_1_*/EVT_BREAKDOWN_* -- save/restore so tests don't leak state."""
+    saved = stages_mod.DISABLE_EFFICIENCY_ACCUMULATION
+    yield
+    stages_mod.DISABLE_EFFICIENCY_ACCUMULATION = saved
 
 
 def test_breakdown_registry_has_expected_keys():
@@ -72,3 +82,22 @@ def test_build_pipeline_and_build_runner_still_wire_up():
     assert isinstance(runner, ChunkRunner)
     assert runner.breakdown_registry is BREAKDOWN_REGISTRY
     assert runner.signal_mask_fn is SIGNAL_MASK_FN
+
+
+def test_build_runner_uses_efficiency_vars_by_default():
+    stages_mod.DISABLE_EFFICIENCY_ACCUMULATION = False
+    runner = build_runner("mc")
+    assert runner.efficiency_vars is stages_mod.EFFICIENCY_VARS
+
+
+def test_build_runner_reads_disable_efficiency_accumulation_live():
+    # Reads the module attribute at call time (not import time) -- flipping it
+    # after event_selection.py's import must still be picked up, same
+    # staleness-avoidance reasoning as EVT_BREAKDOWN_TYPE/N_MINUS_1_*.
+    stages_mod.DISABLE_EFFICIENCY_ACCUMULATION = True
+    runner = build_runner("mc")
+    assert runner.efficiency_vars == []
+
+    stages_mod.DISABLE_EFFICIENCY_ACCUMULATION = False
+    runner = build_runner("mc")
+    assert runner.efficiency_vars is stages_mod.EFFICIENCY_VARS

@@ -44,6 +44,11 @@ Adding new things (analysis side)
 * A new variable to plot -> add a new ``PlotSpec`` to a stage's ``plots`` list.
 * A new variable to follow through every stage -> add a ``VariableConfig`` to
   the ``efficiency_vars`` list passed to the pipeline.
+* An "N-1" plot (this cut's variable, with every OTHER cut applied) -> give the
+  relevant ``Stage``s a ``mask_fn`` (see :func:`mask_from_filter`) and add a
+  ``PlotSpec`` using :func:`n_minus_1_selector` -- see
+  ``analysis_village/nueNp0Pi/config/stages.py``'s ``N_MINUS_1_*`` knobs for the
+  per-analysis wiring pattern.
 
 Compat
 ------
@@ -56,7 +61,7 @@ from __future__ import annotations
 
 from os import makedirs, path
 from dataclasses import dataclass, field
-from typing import Callable, List, Dict, Optional, Any, Tuple
+from typing import Callable, List, Dict, Optional, Any, Tuple, Sequence
 import pickle
 
 import numpy as np
@@ -800,6 +805,31 @@ class PlotSpec:
     # placeholder to fill in the POT string at plot time.
 
 
+def mask_from_filter(fn: Callable[[pd.DataFrame], pd.DataFrame]) -> Callable[[pd.DataFrame], np.ndarray]:
+    """Turn a ``df -> filtered df`` row-filter into a ``df -> bool mask`` function.
+
+    Compares the filtered result's index back against the input's index, so this only
+    gives a correct mask for filters that DROP rows without reordering, duplicating, or
+    reindexing them -- true of every current per-event reco cut in this repo (e.g.
+    ``analysis_village.nueNp0Pi.selections.fiducial_volume``, which is exactly
+    ``df[some_boolean_condition]``).
+
+    Used to derive :attr:`Stage.mask_fn` from the SAME predicate a ``Stage.cut`` already
+    wraps (no duplicated threshold logic), so the "N-1" selection mechanism below
+    (:func:`n_minus_1_selector`) can evaluate a cut independently of the others. A cut
+    that ISN'T a simple, order-independent row filter (e.g. its predicate reads a column
+    only added by an earlier stage) should not use this helper -- leave that ``Stage``'s
+    ``mask_fn`` unset instead, which excludes it from N-1 automatically rather than
+    silently computing a wrong mask.
+    """
+    def _mask(df: pd.DataFrame) -> np.ndarray:
+        if df is None or len(df) == 0:
+            return np.zeros(0, dtype=bool)
+        kept_index = fn(df).index
+        return np.asarray(df.index.isin(kept_index), dtype=bool)
+    return _mask
+
+
 @dataclass
 class Stage:
     """One stage of the pipeline.
@@ -811,13 +841,70 @@ class Stage:
     ``before_cut`` and ``after_cut`` hooks let you do bookkeeping that doesn't
     belong in the cut itself (e.g. computing derived columns from track dfs,
     or rebuilding track candidates).
+
+    ``mask_fn`` is an OPTIONAL, independent restatement of this stage's cut as a
+    ``df -> bool mask`` function (see :func:`mask_from_filter`), evaluated by
+    :meth:`ChunkRunner.run` against the pipeline's PRE-CUT ``evt`` dataframe (not the
+    progressively-filtered one ``cut`` sees). It powers the "N-1" diagnostic mechanism
+    (:func:`n_minus_1_selector`): with every stage's ``mask_fn`` precomputed against the
+    same base dataframe, "apply every cut except this one" is just an AND of independent
+    per-cut masks, with no extra pipeline passes needed. Only set this for cuts that are
+    simple, order-independent row filters (their predicate doesn't depend on a column
+    added by an earlier stage) -- leave it ``None`` otherwise, which just excludes that
+    stage from ever being included in an N-1 selection.
     """
     key: str
     label: str                       # human-readable label for summary plots
     cut: Optional[Callable] = None   # state-dict -> state-dict (or None for no cut)
+    mask_fn: Optional[Callable[[pd.DataFrame], np.ndarray]] = None
     plots: List[PlotSpec] = field(default_factory=list)
     save_for_efficiency: bool = False  # if True, run the efficiency accumulator at this stage
     save_for_breakdown: bool = False   # if True, run the bar-plot accumulator at this stage
+
+
+def n_minus_1_selector(
+    held_out_key: str,
+    cut_stage_keys: Optional[Sequence[str]] = None,
+) -> Callable[[Dict[str, pd.DataFrame], str], Optional[pd.DataFrame]]:
+    """Build a :class:`PlotSpec` ``selector`` for an "N-1" plot.
+
+    Returns the events that survive every stage's ``mask_fn`` EXCEPT
+    ``held_out_key`` -- i.e. "apply the full selection, minus this one cut" -- the
+    classic diagnostic for validating a cut threshold: plot the variable that cut acts
+    on, using every OTHER cut, and see where the held-out threshold would fall on the
+    resulting distribution.
+
+    Relies on :meth:`ChunkRunner.run` having precomputed ``state["_n1_base_evt"]`` /
+    ``state["_n1_masks"]`` (it does this automatically whenever at least one ``Stage``
+    in the pipeline has ``mask_fn`` set -- see :func:`mask_from_filter`).
+
+    ``cut_stage_keys``: which stages' masks to AND together (default: every stage that
+    had a ``mask_fn``, i.e. every N-1-eligible cut). A stage's mask is only ever applied
+    by an N-1 plot if it's included here; a cut you never want held out (e.g. a baseline
+    data-quality cut) just needs its own ``mask_fn`` set and simply never appears as
+    ``held_out_key`` -- it stays enforced in every other cut's N-1 plot.
+
+    Returns ``None`` (nothing to plot) if no masks were computed for this chunk, or if
+    nothing survives the combined selection.
+    """
+    def _sel(state: Dict[str, pd.DataFrame], sample: str) -> Optional[pd.DataFrame]:
+        base = state.get("_n1_base_evt")
+        masks = state.get("_n1_masks")
+        if base is None or not masks:
+            return None
+        keys = cut_stage_keys if cut_stage_keys is not None else list(masks)
+        keep = np.ones(len(base), dtype=bool)
+        for k in keys:
+            if k == held_out_key:
+                continue
+            m = masks.get(k)
+            if m is None:
+                continue
+            keep &= m
+        if not keep.any():
+            return None
+        return base[keep]
+    return _sel
 
 
 # ===========================================================================
@@ -1000,6 +1087,19 @@ class ChunkRunner:
                 logger.debug(msg)
 
         state = dict(initial_state)  # shallow copy; cut funcs do their own copies
+
+        # Precompute independent per-stage cut masks (against the PRE-CUT evt df) for
+        # any stage that opted in via Stage.mask_fn -- powers n_minus_1_selector's "apply
+        # every cut except this one" plots. No-op (and no extra cost) if no stage in this
+        # pipeline sets mask_fn.
+        base_evt = state.get("evt")
+        if base_evt is not None and any(s.mask_fn is not None for s in self.stages):
+            n1_masks = {
+                s.key: s.mask_fn(base_evt) for s in self.stages if s.mask_fn is not None
+            }
+            state["_n1_base_evt"] = base_evt
+            state["_n1_masks"] = n1_masks
+            _tr(f"[pipeline] precomputed N-1 cut masks for stages: {sorted(n1_masks)}")
 
         for stage in self.stages:
             _tr(f"[pipeline] >>> stage={stage.key!r} plots={len(stage.plots)} "

@@ -95,17 +95,17 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
-    def muon_momentum(cls):
+    def leading_muon_ke(cls):
         return cls(
-            var_save_name="muon-p",
-            var_plot_name="P_\mu",
-            var_labels=[r"$\mathrm{P_\mu}$ [GeV/c]", 
-            r"$\mathrm{P_\mu^{reco.}}$ [GeV/c]", 
-            r"$\mathrm{P_\mu^{true}}$ [GeV/c]"],
-            bins=np.array([0.22, 0.27, 0.32, 0.37, 0.42, 0.47, 0.52, 0.57, 0.62, 0.7, 0.8, 0.9, 1.0]),
-            var_evt_reco_col=('mu', 'pfp', 'trk', 'P', 'p_muon', '', ''),
-            var_evt_truth_col=('mu', 'pfp', 'trk', 'truth', 'p', 'totp', ''),
-            var_nu_col=('mc', 'mu', 'totp'),
+            var_save_name="leading_muon_ke",
+            var_plot_name="E_\mu",
+            var_labels=[r"$\mathrm{E_\mu}$ [GeV]", 
+            r"$\mathrm{E_\mu^{reco.}}$ [GeV]", 
+            r"$\mathrm{E_\mu^{true}}$ [GeV]"],
+            bins=np.linspace(0.0, 3.0, 30),
+            var_evt_reco_col=('rec', 'dlp', 'muon_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'muon_energy_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'muon_energy_true', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{dP_\mu}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True,
         )
@@ -191,6 +191,22 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def leading_proton_ke(cls):
+        return cls(
+            var_save_name="leading_proton_ke",
+            var_plot_name="E_p",
+            var_labels=[r"$\mathrm{E_p}$ [GeV]", 
+            r"$\mathrm{E_p^{reco.}}$ [GeV]", 
+            r"$\mathrm{E_p^{true}}$ [GeV]"],
+            bins=np.linspace(0.0, 3.0, 30),
+            var_evt_reco_col=('rec', 'dlp', 'proton_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'proton_energy_true', '', '', '', ''),
+            var_nu_col=('mc', 'p', 'totp'),
+            xsec_label=r"$\frac{d\sigma}{dE_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True
+        )
+
+    @classmethod
     def proton_momentum_res(cls):
         return cls(
             var_save_name="proton-p-res",
@@ -224,6 +240,22 @@ class VariableConfig(_BaseVariableConfig):
             xsec_label=r"$\frac{d\sigma}{dcos(\theta_p)}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
         )
     
+    @classmethod
+    def leading_pion_ke(cls):
+        return cls(
+            var_save_name="leading_pion_ke",
+            var_plot_name="E_\pi",
+            var_labels=[r"$\mathrm{E_\pi}$ [GeV]", 
+            r"$\mathrm{E_\pi^{reco.}}$ [GeV]", 
+            r"$\mathrm{E_\pi^{true}}$ [GeV]"],
+            bins=np.linspace(0.0, 3.0, 30),
+            var_evt_reco_col=('rec', 'dlp', 'pion_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'pion_energy_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'pion_energy_true', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dP_\pi}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True,
+        )
+
     @classmethod
     def tki_del_Tp(cls):
         return cls(
@@ -622,7 +654,7 @@ class VariableConfig(_BaseVariableConfig):
             r"Number of Photons", 
             r"Number of Photons"],
             bins=np.arange(-0.5, 10.5, 1),
-            var_evt_reco_col=('rec', 'dlp', 'photon_count_reco', '', '', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'particle_counts', 'I0', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I0', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I0', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Photons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
@@ -637,7 +669,7 @@ class VariableConfig(_BaseVariableConfig):
             r"Number of Electrons", 
             r"Number of Electrons"],
             bins=np.arange(-0.5, 10.5, 1),
-            var_evt_reco_col=('rec', 'dlp', 'electron_count_reco', '', '', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'particle_counts', 'I1', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I1', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I1', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Electrons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
@@ -652,7 +684,7 @@ class VariableConfig(_BaseVariableConfig):
             r"Number of Muons", 
             r"Number of Muons"],
             bins=np.arange(-0.5, 10.5, 1),
-            var_evt_reco_col=('rec', 'dlp', 'muon_count_reco', '', '', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'particle_counts', 'I2', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I2', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I2', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Muons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
@@ -667,7 +699,7 @@ class VariableConfig(_BaseVariableConfig):
             r"Number of Pions", 
             r"Number of Pions"],
             bins=np.arange(-0.5, 10.5, 1),
-            var_evt_reco_col=('rec', 'dlp', 'pion_count_reco', '', '', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'particle_counts', 'I3', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I3', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I3', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Pions}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
@@ -682,7 +714,7 @@ class VariableConfig(_BaseVariableConfig):
             r"Number of Protons", 
             r"Number of Protons"],
             bins=np.arange(-0.5, 10.5, 1),
-            var_evt_reco_col=('rec', 'dlp', 'proton_count_reco', '', '', '', ''),
+            var_evt_reco_col=('rec', 'dlp', 'particle_counts', 'I4', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I4', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I4', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Protons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
@@ -1576,7 +1608,7 @@ class VariableConfig(_BaseVariableConfig):
 
 var_configs_measurement = [
                 VariableConfig.all_events(),
-                VariableConfig.muon_momentum(),
+                # VariableConfig.muon_momentum(),
                 VariableConfig.muon_direction(),
                 VariableConfig.proton_momentum(),
                 VariableConfig.proton_direction(),

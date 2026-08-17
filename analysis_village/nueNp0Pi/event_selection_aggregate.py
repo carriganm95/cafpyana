@@ -369,6 +369,17 @@ def render_overlay_plots(
                 f"selection_{ps.var_config.var_save_name}"
                 + (("_" + ps.name_suffix) if ps.name_suffix else ""),
             )
+        elif (ps.name_suffix or "").startswith("n_minus_1_"):
+            # N-1 diagnostic plots (config/stages.py's N_MINUS_1_STAGE_KEYS/N_MINUS_1_VARS)
+            # get their own subdirectory (default "n_minus_1", overridable via
+            # N_MINUS_1_DIR_NAME) -- name_suffix is already "n_minus_1_<held_out_key>" (see
+            # build_pipeline()), so the file name alone disambiguates held-out cut + variable
+            # without needing the stage_key/breakdown_type prefix other plots use (these are
+            # all attached to the same final stage).
+            n1_subdir = stages_mod.N_MINUS_1_DIR_NAME or "n_minus_1"
+            rel_name = path.join(
+                n1_subdir, f"{ps.name_suffix}__{ps.var_config.var_save_name}"
+            )
         else:
             rel_name = (
                 f"{stage_key}__{ps.breakdown_type}__{ps.var_config.var_save_name}"

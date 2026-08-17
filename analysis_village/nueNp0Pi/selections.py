@@ -37,6 +37,7 @@ from analysis_village.nueNp0Pi.config.settings import (
     NU_SCORE_TH, SAVE_NTRKS, TRACKSCORE_TH, VTXDIST_TH,
     MU_CHI2MU_TH, MU_CHI2P_TH, MU_LEN_TH, QUAL_TH, P_CHI2P_TH, P_LEN_TH,
     MU_PLO_TH, MU_PHI_TH, P_PLO_TH, P_PHI_TH,
+    ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
 )
 from pyanalib.chunked_selection import multicol_resolve_column_key
 
@@ -431,20 +432,20 @@ def good_electron(df):
 def good_proton(df):
     return df[df.rec.dlp.proton_mask_reco == 1]
 
-def electron_softmax(df):
-    return df[df.rec.dlp.ele_softmax_reco > 0.9]
+def electron_softmax(df, th=ELE_SOFTMAX_TH):
+    return df[df.rec.dlp.ele_softmax_reco > th]
 
-def electron_primary(df):
-    return df[df.rec.dlp.ele_primary_reco > 0.99]
+def electron_primary(df, th=ELE_PRIMARY_TH):
+    return df[df.rec.dlp.ele_primary_reco > th]
 
-def proton_softmax(df):
-    return df[df.rec.dlp.proton_softmax_reco > 0.75]
+def proton_softmax(df, th=P_SOFTMAX_TH):
+    return df[df.rec.dlp.proton_softmax_reco > th]
 
-def electron_vertex_distance(df):
-    return df[df.rec.dlp.ele_vertex_distance_reco < 3.5]
+def electron_vertex_distance(df, th=ELE_VTXDIST_TH):
+    return df[df.rec.dlp.ele_vertex_distance_reco < th]
 
-def electron_dedx(df):
-    return df[df.rec.dlp.ele_dedx_reco < 4]
+def electron_dedx(df, th=ELE_DEDX_TH):
+    return df[df.rec.dlp.ele_dedx_reco < th]
 
 
 

@@ -22,6 +22,10 @@ By default, ``build_pipeline()`` also attaches one stacked event-distribution
 breakdown plot per ``EFFICIENCY_VARS`` variable, by topology, at the final
 stage -- configurable from a notebook cell via the ``EVT_BREAKDOWN_*`` module
 attributes (see the comment above them) without editing this file.
+
+It can also attach "N-1" plots -- for a held-out cut, apply every OTHER cut and plot a
+chosen variable, the classic diagnostic for validating a cut threshold. Off by default;
+configurable via the ``N_MINUS_1_*`` module attributes (see the comment above them).
 """
 from __future__ import annotations
 
@@ -37,6 +41,7 @@ from analysis_village.nueNp0Pi.config.plots import (
 from pyanalib.variable_config import is_integrated_var_config
 from analysis_village.nueNp0Pi.config.settings import (
     topology_labels, genie_mode_labels, genie_sb_mode_labels, pdg_labels,
+    ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
 )
 from analysis_village.nueNp0Pi.selections import (
     fiducial_volume, contained, flash_matched,
@@ -45,7 +50,10 @@ from analysis_village.nueNp0Pi.selections import (
     get_topo_category_nueNp0Pi, get_genie_category_spine, get_pdg_category_spine,
 )
 
-from pyanalib.chunked_selection import PlotSpec, Stage, multicol_resolve_column_key
+from pyanalib.chunked_selection import (
+    PlotSpec, Stage, multicol_resolve_column_key,
+    mask_from_filter, n_minus_1_selector,
+)
 from pyanalib.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -96,6 +104,23 @@ def _apply_to_evt(fn: Callable[[pd.DataFrame], pd.DataFrame]) -> Callable:
             state["evt"] = fn(state["evt"])
         return state
     return _cut
+
+
+def _evt_cut(fn: Callable[[pd.DataFrame], pd.DataFrame]) -> Dict[str, Callable]:
+    """Return ``{"cut": ..., "mask_fn": ...}`` for a simple ``df -> filtered df``
+    evt-level predicate, for ``Stage(**_evt_cut(fn), ...)``.
+
+    Every reco cut in ``../selections.py`` (``fiducial_volume``, ``no_muons``, ...) is
+    exactly this shape: a boolean condition on columns already present on ``evt`` before
+    ANY of this pipeline's cuts run, independent of what other cuts have or haven't been
+    applied yet. That's what makes ``mask_from_filter`` (see
+    ``pyanalib.chunked_selection``) valid here -- it lets ``N_MINUS_1_STAGE_KEYS`` below
+    ask "what if every OTHER cut were applied, but not this one" without re-running the
+    pipeline. If a future cut's predicate ever depends on a column added by an EARLIER
+    stage (order-dependent), give it plain ``cut=_apply_to_evt(fn)`` instead of
+    ``**_evt_cut(fn)`` -- leaving ``mask_fn`` unset just excludes it from N-1 automatically.
+    """
+    return {"cut": _apply_to_evt(fn), "mask_fn": mask_from_filter(fn)}
 
 
 # ===========================================================================
@@ -270,6 +295,75 @@ DISABLE_RATIO_PLOTS: bool = False
 # ``stages_mod.DISABLE_RESPONSE_MATRIX_PLOTS``.
 DISABLE_RESPONSE_MATRIX_PLOTS: bool = False
 
+# Skip the efficiency-curve accumulation entirely (every stage's EfficiencyAccumulator fill
+# becomes a no-op) -- and, since it's the only consumer, skip loading the "mcnu" truth table
+# too (see event_selection.py's run_batch_selection/build_runner, which read this live, same
+# pattern as the other knobs here). Useful when (re-)mapping a batch purely to pick up new
+# N-1 / EVT_BREAKDOWN plots, where the efficiency curves themselves aren't needed for that
+# run -- set True from a notebook cell (``stages_mod.DISABLE_EFFICIENCY_ACCUMULATION = True``)
+# before calling build_event_selection_pipeline()/build_runner(). Does NOT affect
+# save_for_breakdown (bar/cutflow counts) -- those come from a separate accumulator.
+DISABLE_EFFICIENCY_ACCUMULATION: bool = False
+
+
+# ===========================================================================
+# N-1 plots: notebook-configurable knobs.
+# ---------------------------------------------------------------------------
+# Every reco-cut Stage above is built via ``_evt_cut(fn)``, so every one of them has a
+# ``mask_fn`` (independent of the others -- see ``pyanalib.chunked_selection.
+# mask_from_filter``'s docstring for why this is valid here) and is therefore ELIGIBLE
+# to be held out. Nothing is wired up by default though (``N_MINUS_1_STAGE_KEYS`` starts
+# empty) -- there's no single sensible default for "which variable(s) go with which
+# held-out cut", so build_pipeline() only adds N-1 plots once you populate these from a
+# notebook cell, same pattern as EVT_BREAKDOWN_*:
+#
+#     import analysis_village.nueNp0Pi.config.stages as stages_mod
+#     stages_mod.N_MINUS_1_STAGE_KEYS = ["electron_softmax", "electron_dedx"]
+#     stages_mod.N_MINUS_1_VARS = {
+#         "electron_softmax": [VariableConfig.electron_softmax_score()],
+#         "electron_dedx": [VariableConfig.electron_dedx()],
+#     }
+#
+# For each key in ``N_MINUS_1_STAGE_KEYS``, build_pipeline() appends one PlotSpec per
+# VariableConfig in ``N_MINUS_1_VARS[key]`` (falling back to ``N_MINUS_1_DEFAULT_VARS``
+# if that key has no entry) to the FINAL stage's plots list. Each PlotSpec's selector
+# (``pyanalib.chunked_selection.n_minus_1_selector``) applies every OTHER
+# ``mask_fn``-eligible cut and skips just the held-out one -- i.e. "final selection minus
+# this one cut" -- so you see where the held-out threshold would fall on the resulting
+# distribution. A cut you never add to this list (e.g. the baseline is_fiducial /
+# is_contained / is_flash_matched quality cuts) is simply never held out, but -- because
+# it still has its own ``mask_fn`` -- stays enforced in every other cut's N-1 plot.
+#
+# ``N_MINUS_1_VLINES`` optionally draws the held-out cut's own threshold as a vertical
+# marker line on its N-1 plot (``pyanalib.overlay_plotting.overlay_hists_from_histdata``'s
+# existing ``vline=[(x, direction)]`` kwarg -- ``direction=0`` arrows left/"keep smaller
+# values", ``direction=1`` arrows right/"keep larger values"). Pre-filled below for the
+# five PID/kinematic cuts that have a single scalar threshold on a continuous variable
+# (reusing the SAME named constants selections.py's cut functions default to -- see
+# config/settings.py -- so the line always matches the actual cut). The other reco cuts
+# (fiducial_volume, contained, flash_matched, no_muons, no_pions, no_photons,
+# good_electron, good_proton) gate on precomputed boolean reco flags, not a continuous
+# score with a meaningful threshold to draw, so they have no entry here -- add one only if
+# you plot a variable for one of those cuts where a line would be meaningful.
+N_MINUS_1_STAGE_KEYS: Sequence[str] = ()
+N_MINUS_1_VARS: Dict[str, Sequence[Any]] = {}
+N_MINUS_1_DEFAULT_VARS: Sequence[Any] = ()
+N_MINUS_1_BREAKDOWN_TYPE: str = "topology"
+N_MINUS_1_DIR_NAME: Optional[str] = None  # None -> "n_minus_1"
+N_MINUS_1_VLINES: Dict[str, Dict[str, Sequence[Tuple[float, int]]]] = {
+    # Inner key is var_save_name; vline only applied to the matching variable.
+    "electron_softmax":         {"electron-softmax-score":   [(ELE_SOFTMAX_TH, 1)]},
+    "electron_primary":         {"electron-primary-score":   [(ELE_PRIMARY_TH, 1)]},
+    "proton_softmax":           {"proton-softmax-score":     [(P_SOFTMAX_TH, 1)]},
+    "electron_vertex_distance": {"electron-vertex-distance": [(ELE_VTXDIST_TH, 0)]},
+    "electron_dedx":            {"electron-dedx":            [(ELE_DEDX_TH, 0)]},
+    "good_electron":            {"electron-e":               [(0.5, 1)]},
+    "good_proton":              {"leading_proton_ke":        [(0.04, 1)]},
+    "no_muons":                 {"leading_muon_ke":          [(0.025, 0)]},
+    "no_pions":                 {"leading_pion_ke":          [(0.025, 0)]},
+    # no_photons: leading_photon_ke not yet defined; add entry here when it is.
+}
+
 
 # ===========================================================================
 # Pipeline definition
@@ -301,7 +395,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="is_fiducial",
         label="In FV",
-        cut=_apply_to_evt(fiducial_volume),
+        **_evt_cut(fiducial_volume),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -310,7 +404,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="is_flash_matched",
         label="Flash Matched",
-        cut=_apply_to_evt(flash_matched),
+        **_evt_cut(flash_matched),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -319,7 +413,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="is_contained",
         label="Contained",
-        cut=_apply_to_evt(contained),
+        **_evt_cut(contained),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -328,7 +422,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="no_muons",
         label="No Muons > 25 MeV",
-        cut=_apply_to_evt(no_muons),
+        **_evt_cut(no_muons),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -337,7 +431,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="no_pions",
         label="No Pions > 25 MeV",
-        cut=_apply_to_evt(no_pions),
+        **_evt_cut(no_pions),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -346,7 +440,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="no_photons",
         label="No Photons > 100 MeV",
-        cut=_apply_to_evt(no_photons),
+        **_evt_cut(no_photons),
         plots=[
             PlotSpec(
                 var_config=VariableConfig.particle_ke(),
@@ -363,7 +457,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="good_electron",
         label="Electron > 500 MeV",
-        cut=_apply_to_evt(good_electron),
+        **_evt_cut(good_electron),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -372,7 +466,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="good_proton",
         label="Proton > 40 MeV",
-        cut=_apply_to_evt(good_proton),
+        **_evt_cut(good_proton),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -381,7 +475,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="electron_softmax",
         label="Electron Softmax > 0.9",
-        cut=_apply_to_evt(electron_softmax),
+        **_evt_cut(electron_softmax),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -390,7 +484,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key='electron_primary',
         label='Electron Primary Score > 0.99',
-        cut=_apply_to_evt(electron_primary),
+        **_evt_cut(electron_primary),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -399,7 +493,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key="proton_softmax",
         label="Proton Softmax > 0.75",
-        cut=_apply_to_evt(proton_softmax),
+        **_evt_cut(proton_softmax),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -408,7 +502,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key='electron_vertex_distance',
         label='Electron Vertex Distance < 3.5cm',
-        cut=_apply_to_evt(electron_vertex_distance),
+        **_evt_cut(electron_vertex_distance),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -417,7 +511,7 @@ def build_pipeline() -> List[Stage]:
     stages.append(Stage(
         key='electron_dedx',
         label='Electron dEdx < 4 MeV/cm',
-        cut=_apply_to_evt(electron_dedx),
+        **_evt_cut(electron_dedx),
         plots=[],
         save_for_efficiency=True,
         save_for_breakdown=True,
@@ -445,6 +539,47 @@ def build_pipeline() -> List[Stage]:
                 )
             for var_config in EVT_BREAKDOWN_VARS:
                 stage_by_key[key].plots.append(evt_breakdown_plot(var_config, EVT_BREAKDOWN_TYPE))
+
+    # ------------------------------------------------------------------
+    # N-1 plots (notebook-configurable -- see the N_MINUS_1_* module attributes above).
+    # Off by default (N_MINUS_1_STAGE_KEYS starts empty).
+    # ------------------------------------------------------------------
+    if N_MINUS_1_STAGE_KEYS:
+        if N_MINUS_1_BREAKDOWN_TYPE not in BREAKDOWN_REGISTRY:
+            raise ValueError(
+                "N_MINUS_1_BREAKDOWN_TYPE=%r is not a key in BREAKDOWN_REGISTRY (have: %s)"
+                % (N_MINUS_1_BREAKDOWN_TYPE, sorted(BREAKDOWN_REGISTRY))
+            )
+        stage_by_key = {s.key: s for s in stages}
+        final_stage = stages[-1]
+        eligible_keys = sorted(s.key for s in stages if s.mask_fn is not None)
+        for held_out_key in N_MINUS_1_STAGE_KEYS:
+            if held_out_key not in stage_by_key:
+                raise ValueError(
+                    "N_MINUS_1_STAGE_KEYS: unknown stage key %r (have: %s)"
+                    % (held_out_key, list(stage_by_key))
+                )
+            if held_out_key not in eligible_keys:
+                raise ValueError(
+                    "N_MINUS_1_STAGE_KEYS: stage %r has no mask_fn (not built via "
+                    "_evt_cut(...), so it can't be held out for an N-1 plot) -- have "
+                    "mask_fn-eligible stages: %s" % (held_out_key, sorted(eligible_keys))
+                )
+            var_configs = N_MINUS_1_VARS.get(held_out_key, N_MINUS_1_DEFAULT_VARS)
+            vline_map = N_MINUS_1_VLINES.get(held_out_key)
+            for var_config in var_configs:
+                save_kwargs = {"show_genie_label": False}
+                if vline_map is not None:
+                    vline = vline_map.get(var_config.var_save_name)
+                    if vline is not None:
+                        save_kwargs["vline"] = vline
+                final_stage.plots.append(PlotSpec(
+                    var_config=var_config,
+                    breakdown_type=N_MINUS_1_BREAKDOWN_TYPE,
+                    selector=n_minus_1_selector(held_out_key, eligible_keys),
+                    name_suffix=f"n_minus_1_{held_out_key}",
+                    save_kwargs=save_kwargs,
+                ))
 
     logger.debug("[pipeline] built %d stages:", len(stages))
     for i, s in enumerate(stages):
