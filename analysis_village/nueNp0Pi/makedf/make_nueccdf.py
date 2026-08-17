@@ -232,6 +232,16 @@ def make_nueNp0Pi_df(f):
     subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_p_t = _ptmp.rec.dlp_true.particles.p.where(subprimproton_rows_t).groupby(level=int_levels).first()
 
+    # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
+    # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
+    _pdg_r = abs(_ptmp.rec.dlp.particles.pdg_code)
+    _valid_r = _ptmp.rec.dlp.particles.is_valid
+    photon_count_reco   = ((_pdg_r == 22)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    electron_count_reco = ((_pdg_r == 11)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    muon_count_reco     = ((_pdg_r == 13)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    pion_count_reco     = ((_pdg_r == 211)  & (_valid_r == 1)).groupby(level=int_levels).sum()
+    proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
+
     tki_mc = get_tki_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels)
 
     tki_lp_mc = get_tki_spine_lp(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels)
@@ -372,7 +382,13 @@ def make_nueNp0Pi_df(f):
                         ('del_Tp_reco',    tki_mc['del_Tp']),
                         
                         ('lp_open_angle_reco', lp_open_angle),
-                        ('lepton_beam_angle_reco', lepton_beam_angle)
+                        ('lepton_beam_angle_reco', lepton_beam_angle),
+
+                        ('photon_count_reco',   photon_count_reco),
+                        ('electron_count_reco', electron_count_reco),
+                        ('muon_count_reco',     muon_count_reco),
+                        ('pion_count_reco',     pion_count_reco),
+                        ('proton_count_reco',   proton_count_reco),
 
                         ]:
         col = pad_column_name(('rec', 'dlp', label), slcdf)

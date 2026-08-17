@@ -83,10 +83,10 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"$\mathrm{E_e}$ Resolution",
             r"$\mathrm{E_e^{reco.}}$ Resolution",
             r"$\mathrm{E_e^{true}}$ Resolution"],
-            bins=np.linspace(-10.0, 10.0, 20),
-            var_evt_reco_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', '', ''),
-            var_evt_truth_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
-            var_nu_col=('rec', 'dlp', 'ele_energy_res_GeV', '', '', ''),
+            bins=np.linspace(-0.2, 0.2, 40),
+            var_evt_reco_col=('rec', 'dlp', 'ele_energy_res', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'ele_energy_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'ele_energy_res', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
             ratio_mode="signal_bkgd", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
@@ -110,13 +110,32 @@ class VariableConfig(_BaseVariableConfig):
             response_matrix=True,
         )
 
+    # @classmethod
+    # def muon_momentum_res(cls):
+    #     return cls(
+    #         var_save_name="muon-p-res",
+    #         var_plot_name="$P_\\mu$ Resolution",
+    #         var_labels=[r"$\mathrm{P_\mu}$ Resolution",
+    #         r"$\mathrm{P_\mu^{reco.}}$ Resolution",
+    #         r"$\mathrm{P_\mu^{true}}$ Resolution"],
+    #         bins=np.linspace(-0.001, 0.001, 40),
+    #         var_evt_reco_col=('mu', 'pfp', 'trk', 'P', 'p_muon_res', '', ''),
+    #         var_evt_truth_col=('mu', 'pfp', 'trk', 'P', 'p_muon_res', '', ''),
+    #         var_nu_col=('mu', 'pfp', 'trk', 'P', 'p_muon_res', '', ''),
+    #         xsec_label=r"$\frac{d\sigma}{dP_\mu^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+    #         ratio_mode="signal_bkgd",
+    #         ratio_signal_indices=[0, 1],
+    #         ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+    #         ratio_breakdown_type="topology",
+    #     )
+
     @classmethod
     def muon_momentum_mcs(cls):
         return cls(
             var_save_name="muon-p",
             var_plot_name="P_\mu",
-            var_labels=[r"$\mathrm{P_\mu}$ [GeV/c]", 
-            r"$\mathrm{P_\mu^{reco.}}$ [GeV/c]", 
+            var_labels=[r"$\mathrm{P_\mu}$ [GeV/c]",
+            r"$\mathrm{P_\mu^{reco.}}$ [GeV/c]",
             r"$\mathrm{P_\mu^{true}}$ [GeV/c]"],
             bins=np.array([0.22, 0.27, 0.32, 0.37, 0.42, 0.47, 0.52, 0.57, 0.62, 0.7, 0.8, 0.9, 1.0]),
             var_evt_reco_col=('mu', 'pfp', 'trk', 'mcsP', 'fwdP_muon', '', ''),
@@ -172,6 +191,25 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def proton_momentum_res(cls):
+        return cls(
+            var_save_name="proton-p-res",
+            var_plot_name="$P_p$ Resolution",
+            var_labels=[r"$\mathrm{P_p}$ Resolution",
+            r"$\mathrm{P_p^{reco.}}$ Resolution",
+            r"$\mathrm{P_p^{true}}$ Resolution"],
+            bins=np.linspace(-0.2, 0.2, 40),
+            var_evt_reco_col=('rec', 'dlp', 'proton_p_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'proton_p_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'proton_p_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dP_p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
     def proton_direction(cls):
         return cls(
             var_save_name="proton-dir_z",
@@ -191,8 +229,8 @@ class VariableConfig(_BaseVariableConfig):
         return cls(
             var_save_name="tki-del_Tp",
             var_plot_name="$\\delta p_T$",
-            var_labels=[r"$\mathrm{\delta p_T}$ [MeV/c]", 
-            r"$\mathrm{\delta p_T^{reco.}}$ [MeV/c]", 
+            var_labels=[r"$\mathrm{\delta p_T}$ [MeV/c]",
+            r"$\mathrm{\delta p_T^{reco.}}$ [MeV/c]",
             r"$\mathrm{\delta p_T^{true}}$ [MeV/c]"],
             bins=np.linspace(0.0, 2000.0, 20),
             var_evt_reco_col=('rec', 'dlp', 'del_Tp_reco', '', '', '', ''),
@@ -201,14 +239,33 @@ class VariableConfig(_BaseVariableConfig):
             xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True
         )
-    
+
+    @classmethod
+    def tki_del_Tp_res(cls):
+        return cls(
+            var_save_name="tki-del_Tp-res",
+            var_plot_name="$\\delta p_T$ Resolution",
+            var_labels=[r"$\mathrm{\delta p_T}$ Resolution",
+            r"$\mathrm{\delta p_T^{reco.}}$ Resolution",
+            r"$\mathrm{\delta p_T^{true}}$ Resolution"],
+            bins=np.linspace(-5.0, 5.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_Tp_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_Tp_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_Tp_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
     @classmethod
     def tki_del_alpha(cls):
         return cls(
             var_save_name="tki-del_alpha",
             var_plot_name="$\\delta \\alpha_T$",
-            var_labels=[r"$\mathrm{\delta \alpha_T}$ [deg]", 
-            r"$\mathrm{\delta \alpha_T^{reco.}}$ [deg]", 
+            var_labels=[r"$\mathrm{\delta \alpha_T}$ [deg]",
+            r"$\mathrm{\delta \alpha_T^{reco.}}$ [deg]",
             r"$\mathrm{\delta \alpha_T^{true}}$ [deg]"],
             bins=np.array([0,25,50,75,100,120,140,160,180]),
             var_evt_reco_col=('rec', 'dlp', 'del_alpha_reco', '', '', '', ''),
@@ -216,14 +273,33 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_alpha_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$"
         )
-    
+
+    @classmethod
+    def tki_del_alpha_res(cls):
+        return cls(
+            var_save_name="tki-del_alpha-res",
+            var_plot_name="$\\delta \\alpha_T$ Resolution",
+            var_labels=[r"$\mathrm{\delta \alpha_T}$ Resolution [deg]",
+            r"$\mathrm{\delta \alpha_T^{reco.}}$ Resolution [deg]",
+            r"$\mathrm{\delta \alpha_T^{true}}$ Resolution [deg]"],
+            bins=np.linspace(-90.0, 90.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_alpha_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_alpha_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_alpha_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
     @classmethod
     def tki_del_phi(cls):
         return cls(
             var_save_name="tki-del_phi",
             var_plot_name="$\\delta \\phi_T$",
-            var_labels=[r"$\mathrm{\delta \phi_T}$ [deg]", 
-            r"$\mathrm{\delta \phi_T^{reco.}}$ [deg]", 
+            var_labels=[r"$\mathrm{\delta \phi_T}$ [deg]",
+            r"$\mathrm{\delta \phi_T^{reco.}}$ [deg]",
             r"$\mathrm{\delta \phi_T^{true}}$ [deg]"],
             bins=np.array([0,10,20,30,40,55,70,90,110,130,150,180]),
             var_evt_reco_col=('rec', 'dlp', 'del_phi_reco', '', '', '', ''),
@@ -234,12 +310,31 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def tki_del_phi_res(cls):
+        return cls(
+            var_save_name="tki-del_phi-res",
+            var_plot_name="$\\delta \\phi_T$ Resolution",
+            var_labels=[r"$\mathrm{\delta \phi_T}$ Resolution [deg]",
+            r"$\mathrm{\delta \phi_T^{reco.}}$ Resolution [deg]",
+            r"$\mathrm{\delta \phi_T^{true}}$ Resolution [deg]"],
+            bins=np.linspace(-90.0, 90.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_phi_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_phi_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_phi_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
     def tki_del_Tp_lp(cls):
         return cls(
             var_save_name="tki-del_Tp_lp",
             var_plot_name="$\\delta p_T l-p$",
-            var_labels=[r"$\mathrm{\delta p_T}$ l-p [MeV/c]", 
-            r"$\mathrm{\delta p_T^{reco.}}$ l-p [MeV/c]", 
+            var_labels=[r"$\mathrm{\delta p_T}$ l-p [MeV/c]",
+            r"$\mathrm{\delta p_T^{reco.}}$ l-p [MeV/c]",
             r"$\mathrm{\delta p_T^{true}}$ l-p [MeV/c]"],
             bins=np.linspace(0.0, 2000.0, 20),
             var_evt_reco_col=('rec', 'dlp', 'del_Tp_lp_reco', '', '', '', ''),
@@ -247,14 +342,33 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$"
         )
-    
+
+    @classmethod
+    def tki_del_Tp_lp_res(cls):
+        return cls(
+            var_save_name="tki-del_Tp_lp-res",
+            var_plot_name="$\\delta p_T$ l-p Resolution",
+            var_labels=[r"$\mathrm{\delta p_T}$ l-p Resolution",
+            r"$\mathrm{\delta p_T^{reco.}}$ l-p Resolution",
+            r"$\mathrm{\delta p_T^{true}}$ l-p Resolution"],
+            bins=np.linspace(-5.0, 5.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_Tp_lp_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_Tp_lp_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_Tp_lp_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
     @classmethod
     def tki_del_alpha_lp(cls):
         return cls(
             var_save_name="tki-del_alpha_lp",
             var_plot_name="$\\delta \\alpha_T l-p$",
-            var_labels=[r"$\mathrm{\delta \alpha_T}$ l-p [deg]", 
-            r"$\mathrm{\delta \alpha_T^{reco.}}$ l-p [deg]", 
+            var_labels=[r"$\mathrm{\delta \alpha_T}$ l-p [deg]",
+            r"$\mathrm{\delta \alpha_T^{reco.}}$ l-p [deg]",
             r"$\mathrm{\delta \alpha_T^{true}}$ l-p [deg]"],
             bins=np.array([0,25,50,75,100,120,140,160,180]),
             var_evt_reco_col=('rec', 'dlp', 'del_alpha_lp_reco', '', '', '', ''),
@@ -263,14 +377,33 @@ class VariableConfig(_BaseVariableConfig):
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
             response_matrix=True
         )
-    
+
+    @classmethod
+    def tki_del_alpha_lp_res(cls):
+        return cls(
+            var_save_name="tki-del_alpha_lp-res",
+            var_plot_name="$\\delta \\alpha_T$ l-p Resolution",
+            var_labels=[r"$\mathrm{\delta \alpha_T}$ l-p Resolution [deg]",
+            r"$\mathrm{\delta \alpha_T^{reco.}}$ l-p Resolution [deg]",
+            r"$\mathrm{\delta \alpha_T^{true}}$ l-p Resolution [deg]"],
+            bins=np.linspace(-90.0, 90.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_alpha_lp_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_alpha_lp_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_alpha_lp_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
     @classmethod
     def tki_del_phi_lp(cls):
         return cls(
             var_save_name="tki-del_phi_lp",
             var_plot_name="$\\delta \\phi_T l-p$",
-            var_labels=[r"$\mathrm{\delta \phi_T}$ l-p [deg]", 
-            r"$\mathrm{\delta \phi_T^{reco.}}$ l-p [deg]", 
+            var_labels=[r"$\mathrm{\delta \phi_T}$ l-p [deg]",
+            r"$\mathrm{\delta \phi_T^{reco.}}$ l-p [deg]",
             r"$\mathrm{\delta \phi_T^{true}}$ l-p [deg]"],
             bins=np.array([0,10,20,30,40,55,70,90,110,130,150,180]),
             var_evt_reco_col=('rec', 'dlp', 'del_phi_lp_reco', '', '', '', ''),
@@ -281,12 +414,31 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def tki_del_phi_lp_res(cls):
+        return cls(
+            var_save_name="tki-del_phi_lp-res",
+            var_plot_name="$\\delta \\phi_T$ l-p Resolution",
+            var_labels=[r"$\mathrm{\delta \phi_T}$ l-p Resolution [deg]",
+            r"$\mathrm{\delta \phi_T^{reco.}}$ l-p Resolution [deg]",
+            r"$\mathrm{\delta \phi_T^{true}}$ l-p Resolution [deg]"],
+            bins=np.linspace(-90.0, 90.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'del_phi_lp_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'del_phi_lp_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'del_phi_lp_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
     def opening_angle(cls):
         return cls(
             var_save_name="opening_angle",
             var_plot_name="$cos{\\theta_{e, p}}$",
-            var_labels=[r"$\mathrm{cos(\theta_{e, p})}$", 
-            r"$\mathrm{cos(\theta_{e, p}^{reco.})}$", 
+            var_labels=[r"$\mathrm{cos(\theta_{e, p})}$",
+            r"$\mathrm{cos(\theta_{e, p}^{reco.})}$",
             r"$\mathrm{cos(\theta_{e, p}^{true})}$"],
             bins=np.linspace(-1.0, 1.0, 20),
             var_evt_reco_col=('rec', 'dlp', 'lp_open_angle_reco', '', '', '', ''),
@@ -297,12 +449,31 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def opening_angle_res(cls):
+        return cls(
+            var_save_name="opening_angle-res",
+            var_plot_name="$cos(\\theta_{e,p})$ Resolution",
+            var_labels=[r"$\mathrm{cos(\theta_{e,p})}$ Resolution",
+            r"$\mathrm{cos(\theta_{e,p}^{reco.})}$ Resolution",
+            r"$\mathrm{cos(\theta_{e,p}^{true})}$ Resolution"],
+            bins=np.linspace(-1.0, 1.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'lp_open_angle_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'lp_open_angle_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'lp_open_angle_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\theta_{e,p}^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
     def opening_angle_beam(cls):
         return cls(
             var_save_name="opening_angle_beam",
             var_plot_name="$cos{\\theta_{e, beam}}$",
-            var_labels=[r"$\mathrm{cos(\theta_{e, beam})}$", 
-            r"$\mathrm{cos(\theta_{e, beam}^{reco.})}$", 
+            var_labels=[r"$\mathrm{cos(\theta_{e, beam})}$",
+            r"$\mathrm{cos(\theta_{e, beam}^{reco.})}$",
             r"$\mathrm{cos(\theta_{e, beam}^{true})}$"],
             bins=np.linspace(-1.0, 1.0, 20),
             var_evt_reco_col=('rec', 'dlp', 'lepton_beam_angle_reco', '', '', '', ''),
@@ -310,6 +481,25 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$",
             response_matrix=True
+        )
+
+    @classmethod
+    def opening_angle_beam_res(cls):
+        return cls(
+            var_save_name="opening_angle_beam-res",
+            var_plot_name="$cos(\\theta_{e,\\mathrm{beam}})$ Resolution",
+            var_labels=[r"$\mathrm{cos(\theta_{e,\mathrm{beam}})}$ Resolution",
+            r"$\mathrm{cos(\theta_{e,\mathrm{beam}}^{reco.})}$ Resolution",
+            r"$\mathrm{cos(\theta_{e,\mathrm{beam}}^{true})}$ Resolution"],
+            bins=np.linspace(-1.0, 1.0, 40),
+            var_evt_reco_col=('rec', 'dlp', 'lepton_beam_angle_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'lepton_beam_angle_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'lepton_beam_angle_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\theta_{e,\mathrm{beam}}^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
         )
 
     @classmethod
@@ -392,17 +582,111 @@ class VariableConfig(_BaseVariableConfig):
     def secondary_proton_p(cls):
         return cls(
             var_save_name="secondary-proton-p",
-            var_plot_name="Secondary Proton p [GeV/c]",
-            var_labels=[r"Secondary Proton p [GeV/c]", 
-            r"Secondary Proton p [GeV/c]", 
-            r"Secondary Proton p [GeV/c]"],
-            bins=np.linspace(0.0, 10.0, 20),
+            var_plot_name="Secondary Proton p [MeV/c]",
+            var_labels=[r"Secondary Proton p [MeV/c]", 
+            r"Secondary Proton p [MeV/c]", 
+            r"Secondary Proton p [MeV/c]"],
+            bins=np.linspace(0.0, 3000.0, 30),
             var_evt_reco_col=('rec', 'dlp', 'subprim_proton_p_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'subprim_proton_p_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'subprim_proton_p_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary Proton p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
             response_matrix=True
         )
+
+    @classmethod
+    def secondary_proton_p_res(cls):
+        return cls(
+            var_save_name="secondary-proton-p-res",
+            var_plot_name="Secondary Proton $p$ Resolution",
+            var_labels=[r"Secondary Proton $p$ Resolution",
+            r"Secondary Proton $p$ Resolution",
+            r"Secondary Proton $p$ Resolution"],
+            bins=np.linspace(-2.0, 2.0, 20),
+            var_evt_reco_col=('rec', 'dlp', 'subprim_proton_p_res', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp', 'subprim_proton_p_res', '', '', ''),
+            var_nu_col=('rec', 'dlp', 'subprim_proton_p_res', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary\ Proton}\ p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
+            ratio_mode="signal_bkgd",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
+    def num_photons(cls):
+        return cls(
+            var_save_name="num-photons",
+            var_plot_name="Number of Photons",
+            var_labels=[r"Number of Photons", 
+            r"Number of Photons", 
+            r"Number of Photons"],
+            bins=np.arange(-0.5, 10.5, 1),
+            var_evt_reco_col=('rec', 'dlp', 'photon_count_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I0', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I0', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Photons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            )
+
+    @classmethod
+    def num_electrons(cls):
+        return cls(
+            var_save_name="num-electrons",
+            var_plot_name="Number of Electrons",
+            var_labels=[r"Number of Electrons", 
+            r"Number of Electrons", 
+            r"Number of Electrons"],
+            bins=np.arange(-0.5, 10.5, 1),
+            var_evt_reco_col=('rec', 'dlp', 'electron_count_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I1', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I1', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Electrons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            )
+
+    @classmethod
+    def num_muons(cls):
+        return cls(
+            var_save_name="num-muons",
+            var_plot_name="Number of Muons",
+            var_labels=[r"Number of Muons", 
+            r"Number of Muons", 
+            r"Number of Muons"],
+            bins=np.arange(-0.5, 10.5, 1),
+            var_evt_reco_col=('rec', 'dlp', 'muon_count_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I2', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I2', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Muons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            )
+
+    @classmethod
+    def num_pions(cls):
+        return cls(
+            var_save_name="num-pions",
+            var_plot_name="Number of Pions",
+            var_labels=[r"Number of Pions", 
+            r"Number of Pions", 
+            r"Number of Pions"],
+            bins=np.arange(-0.5, 10.5, 1),
+            var_evt_reco_col=('rec', 'dlp', 'pion_count_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I3', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I3', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Pions}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            )
+
+    @classmethod
+    def num_protons(cls):
+        return cls(
+            var_save_name="num-protons",
+            var_plot_name="Number of Protons",
+            var_labels=[r"Number of Protons", 
+            r"Number of Protons", 
+            r"Number of Protons"],
+            bins=np.arange(-0.5, 10.5, 1),
+            var_evt_reco_col=('rec', 'dlp', 'proton_count_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'particle_counts', 'I4', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'particle_counts', 'I4', '', '', ''),
+            xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Protons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$"
+            )
 
     # ==== additional variables for efficiency inspection ====
 
@@ -1357,7 +1641,22 @@ CORE_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (
     VariableConfig.electron_softmax_score(),
     VariableConfig.electron_primary_score(),
     VariableConfig.proton_softmax_score(),
-    VariableConfig.secondary_proton_p()
+    VariableConfig.secondary_proton_p(),
+    VariableConfig.proton_momentum_res(),
+    VariableConfig.secondary_proton_p_res(),
+    VariableConfig.tki_del_alpha_lp_res(),
+    VariableConfig.tki_del_phi_lp_res(),
+    VariableConfig.tki_del_Tp_lp_res(),
+    VariableConfig.tki_del_alpha_res(),
+    VariableConfig.tki_del_phi_res(),
+    VariableConfig.tki_del_Tp_res(),
+    VariableConfig.opening_angle_res(),
+    VariableConfig.opening_angle_beam_res(),
+    VariableConfig.num_photons(),
+    VariableConfig.num_electrons(),
+    VariableConfig.num_muons(),
+    VariableConfig.num_pions(),
+    VariableConfig.num_protons(),
 )
 
 FINAL_SELECTED_EVT_VARIABLE_CONFIGS: tuple[VariableConfig, ...] = (

@@ -87,8 +87,61 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         and multicol_resolve_column_key(df, src) is not None
     ]
 
-    _res_col = ("rec", "dlp", "ele_energy_res_GeV", "", "")
-    add_ele_res = multicol_resolve_column_key(df, _res_col) is None
+    # Resolution columns for kinematics variables: (out_col, reco_col, true_col, mode).
+    # "frac" -> (true - reco) / true (dimensionless); "abs" -> reco - true (same units).
+    _kinematics_res_specs = [
+        (("rec", "dlp", "ele_energy_res", "", ""),
+         ("rec", "dlp", "ele_energy_reco", "", ""),
+         ("rec", "dlp_true", "ele_energy_true", "", ""),
+         "frac"),
+        (("rec", "dlp", "proton_p_res", "", ""),
+         ("rec", "dlp", "proton_p_reco", "", ""),
+         ("rec", "dlp_true", "proton_p_true", "", ""),
+         "frac"),
+        (("rec", "dlp", "subprim_proton_p_res", "", ""),
+         ("rec", "dlp", "subprim_proton_p_reco", "", ""),
+         ("rec", "dlp_true", "subprim_proton_p_true", "", ""),
+         "frac"),
+        (("rec", "dlp", "del_Tp_res", "", ""),
+         ("rec", "dlp", "del_Tp_reco", "", ""),
+         ("rec", "dlp_true", "del_Tp_true", "", ""),
+         "frac"),
+        (("rec", "dlp", "del_Tp_lp_res", "", ""),
+         ("rec", "dlp", "del_Tp_lp_reco", "", ""),
+         ("rec", "dlp_true", "del_Tp_lp_true", "", ""),
+         "frac"),
+        (("rec", "dlp", "del_alpha_res", "", ""),
+         ("rec", "dlp", "del_alpha_reco", "", ""),
+         ("rec", "dlp_true", "del_alpha_true", "", ""),
+         "abs"),
+        (("rec", "dlp", "del_alpha_lp_res", "", ""),
+         ("rec", "dlp", "del_alpha_lp_reco", "", ""),
+         ("rec", "dlp_true", "del_alpha_lp_true", "", ""),
+         "abs"),
+        (("rec", "dlp", "del_phi_res", "", ""),
+         ("rec", "dlp", "del_phi_reco", "", ""),
+         ("rec", "dlp_true", "del_phi_true", "", ""),
+         "abs"),
+        (("rec", "dlp", "del_phi_lp_res", "", ""),
+         ("rec", "dlp", "del_phi_lp_reco", "", ""),
+         ("rec", "dlp_true", "del_phi_lp_true", "", ""),
+         "abs"),
+        (("rec", "dlp", "lp_open_angle_res", "", ""),
+         ("rec", "dlp", "lp_open_angle_reco", "", ""),
+         ("rec", "dlp_true", "lp_open_angle_true", "", ""),
+         "abs"),
+        (("rec", "dlp", "lepton_beam_angle_res", "", ""),
+         ("rec", "dlp", "lepton_beam_angle_reco", "", ""),
+         ("rec", "dlp_true", "lepton_beam_angle_true", "", ""),
+         "abs"),
+    ]
+    # Only check whether any output column is missing; actual prerequisites are
+    # re-evaluated on `out` after GeV conversions (some res cols depend on the
+    # _GeV columns that are added in the same function call).
+    _might_need_kinematics_res = any(
+        multicol_resolve_column_key(df, out_col) is None
+        for out_col, _, _, _ in _kinematics_res_specs
+    )
 
     if not (
         (add_theta and dirs_ok)
@@ -98,7 +151,7 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
         or (add_mu_t_phi and mu_truth_xy_ok)
         or (add_p_t_phi and p_truth_xy_ok)
         or gev_conversions_needed
-        or add_ele_res
+        or _might_need_kinematics_res
     ):
         return df
 
@@ -150,11 +203,22 @@ def ensure_derived_trk_kinematics_cols(evtdf: pd.DataFrame) -> pd.DataFrame:
     for src_parts, gev_parts in gev_conversions_needed:
         src_key = multicol_resolve_column_key(out, src_parts)
         out.loc[:, pad_column_name(gev_parts, out)] = out.loc[:, src_key] * 1e-3
-    if add_ele_res:
-        reco_key = multicol_resolve_column_key(out, ("rec", "dlp", "ele_energy_reco_GeV", "", ""))
-        true_key = multicol_resolve_column_key(out, ("rec", "dlp_true", "ele_energy_true_GeV", "", ""))
-        if reco_key is not None and true_key is not None:
-            out.loc[:, pad_column_name(_res_col, out)] = (out.loc[:, true_key] - out.loc[:, reco_key]) / out.loc[:, true_key]
+    # Re-evaluate res specs on `out` (not df) so that GeV-derived prerequisite
+    # columns added above (e.g. proton_p_reco_GeV) are visible to the lookup.
+    for out_col, reco_col, true_col, mode in _kinematics_res_specs:
+        if multicol_resolve_column_key(out, out_col) is not None:
+            continue
+        reco_key = multicol_resolve_column_key(out, reco_col)
+        true_key = multicol_resolve_column_key(out, true_col)
+        if reco_key is None or true_key is None:
+            continue
+        reco_vals = np.asarray(out.loc[:, reco_key], dtype=float)
+        true_vals = np.asarray(out.loc[:, true_key], dtype=float)
+        if mode == "frac":
+            vals = (true_vals - reco_vals) / true_vals
+        else:
+            vals = reco_vals - true_vals
+        out.loc[:, pad_column_name(out_col, out)] = vals
     return out
 
 

@@ -815,9 +815,18 @@ def overlay_hists_from_histdata(
             num_values, denom_values, num_weights, denom_weights, _ratio_bins
         )
         _ratio_bin_centers = 0.5 * (_ratio_bins[:-1] + _ratio_bins[1:])
-        ax_r.errorbar(_ratio_bin_centers, ratio_vals, yerr=ratio_err,
-                      fmt='o', color='black',
-                      markersize=5, capsize=3, linewidth=1.5, zorder=10)
+        # Only draw bins where the denominator is non-zero
+        valid = ratio_denom_hist != 0
+        if np.any(valid):
+            ax_r.errorbar(_ratio_bin_centers[valid], ratio_vals[valid], yerr=ratio_err[valid],
+                          fmt='o', color='black',
+                          markersize=5, capsize=3, linewidth=1.5, zorder=10)
+            # Auto-scale y-axis to cover error bars when the caller hasn't fixed the range
+            if ratio_ylim is None:
+                y_lo = np.nanmin(ratio_vals[valid] - ratio_err[valid])
+                y_hi = np.nanmax(ratio_vals[valid] + ratio_err[valid])
+                margin = max(0.05 * (y_hi - y_lo), 0.05)
+                ax_r.set_ylim(y_lo - margin, y_hi + margin)
         ax_r.set_xlim(_ratio_bins[0], _ratio_bins[-1])
     elif ratio:
         if syst is not None and total_mc is not None:
