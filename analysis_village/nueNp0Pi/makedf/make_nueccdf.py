@@ -83,9 +83,10 @@ def get_highest_ke_particle_idx(pfpdf, pdg, truth=False):
     branch = 'dlp_true' if truth else 'dlp'
     ke_col  = pad_column_name(('rec', branch, 'particles', 'ke'),       pfpdf)
     pdg_col = pad_column_name(('rec', branch, 'particles', 'pdg_code'), pfpdf)
+    primary_col = pad_column_name(('rec', branch, 'particles', 'is_primary'), pfpdf)
     int_levels = list(range(pfpdf.index.nlevels - 1))
     empty = pd.Series(dtype=float, index=pd.MultiIndex.from_tuples([], names=pfpdf.index.names[:len(int_levels)]))
-    filtered = pfpdf[(abs(pfpdf[pdg_col]) == pdg) & (pfpdf[ke_col] > 0)]
+    filtered = pfpdf[(abs(pfpdf[pdg_col]) == pdg) & (pfpdf[ke_col] > 0) & (pfpdf[primary_col] == True)]
     if filtered.empty:
         return empty
     best_idx = filtered[ke_col].groupby(level=int_levels).idxmax()
@@ -99,9 +100,10 @@ def get_second_highest_ke_particle_idx(pfpdf, pdg, truth=False):
     branch = 'dlp_true' if truth else 'dlp'
     ke_col  = pad_column_name(('rec', branch, 'particles', 'ke'),       pfpdf)
     pdg_col = pad_column_name(('rec', branch, 'particles', 'pdg_code'), pfpdf)
+    primary_col = pad_column_name(('rec', branch, 'particles', 'is_primary'), pfpdf)
     int_levels = list(range(pfpdf.index.nlevels - 1))
     empty = pd.Series(dtype=float, index=pd.MultiIndex.from_tuples([], names=pfpdf.index.names[:len(int_levels)]))
-    filtered = pfpdf[(abs(pfpdf[pdg_col]) == pdg) & (pfpdf[ke_col] > 0)]
+    filtered = pfpdf[(abs(pfpdf[pdg_col]) == pdg) & (pfpdf[ke_col] > 0) & (pfpdf[primary_col] == True)]
     if filtered.empty:
         return empty
     ranks = filtered[ke_col].groupby(level=int_levels).rank(method='first', ascending=False)
@@ -122,6 +124,7 @@ def make_nueNp0Pi_df(f):
 
     pfpdf = make_spine_part_df(f)
     slcdf = make_spine_int_df(f)
+    hdrdf = make_mchdrdf(f)
 
     mcdf = make_mcnudf_nuecc(f)
 
@@ -181,12 +184,12 @@ def make_nueNp0Pi_df(f):
     cc_mask        = (_ptmp.rec.dlp_true.current_type == 0).groupby(level=int_levels).first()
     nupdg_mask     = (abs(_ptmp.rec.dlp_true.pdg_code) == 12).groupby(level=int_levels).first()
     fiducial_mask_t  = (_ptmp.rec.dlp_true.is_fiducial == 1).groupby(level=int_levels).first()
-    ele_mask_t       = (primele_rows_t    & (_ptmp.rec.dlp_true.particles.calo_ke > 500.0)).groupby(level=int_levels).any()
-    proton_mask_t    = (primproton_rows_t & (_ptmp.rec.dlp_true.particles.calo_ke > 40.0 )).groupby(level=int_levels).any()
-    subprimproton_mask_t = (subprimproton_rows_t & (_ptmp.rec.dlp_true.particles.calo_ke > 40.0 )).groupby(level=int_levels).any()
-    muon_mask_t      = (primmuon_rows_t   & (_ptmp.rec.dlp_true.particles.calo_ke > 25.0 )).groupby(level=int_levels).any()
-    pion_mask_t      = (primpion_rows_t   & (_ptmp.rec.dlp_true.particles.calo_ke > 25.0 )).groupby(level=int_levels).any()
-    photon_mask_t    = (primphoton_rows_t & (_ptmp.rec.dlp_true.particles.calo_ke > 100.0)).groupby(level=int_levels).any()
+    ele_mask_t       = (primele_rows_t    & (_ptmp.rec.dlp_true.particles.ke >= 500.0)).groupby(level=int_levels).any()
+    proton_mask_t    = (primproton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 40.0 )).groupby(level=int_levels).any()
+    subprimproton_mask_t = (subprimproton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 40.0 )).groupby(level=int_levels).any()
+    muon_mask_t      = (primmuon_rows_t   & (_ptmp.rec.dlp_true.particles.ke >= 25.0 )).groupby(level=int_levels).any()
+    pion_mask_t      = (primpion_rows_t   & (_ptmp.rec.dlp_true.particles.ke >= 25.0 )).groupby(level=int_levels).any()
+    photon_mask_t    = (primphoton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 100.0)).groupby(level=int_levels).any()
 
     ele_mask_noKE_t       = primele_rows_t.groupby(level=int_levels).any()
     proton_mask_noKE_t    = primproton_rows_t.groupby(level=int_levels).any()
@@ -198,41 +201,69 @@ def make_nueNp0Pi_df(f):
     fiducial_mask_r = (_ptmp.rec.dlp.is_fiducial == 1).groupby(level=int_levels).first()
     flash_match_r = (_ptmp.rec.dlp.is_flash_matched == 1).groupby(level=int_levels).first()
     containment_r = (_ptmp.rec.dlp.is_contained == 1).groupby(level=int_levels).first()
-    muon_mask_r = (primmuon_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 25.0)).groupby(level=int_levels).any()
-    pion_mask_r = (primpion_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 25.0)).groupby(level=int_levels).any()
-    proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 40.0)).groupby(level=int_levels).any()
-    subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 40.0)).groupby(level=int_levels).any()
-    photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 100.0)).groupby(level=int_levels).any()
-    ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.calo_ke > 500.0)).groupby(level=int_levels).any()
+    muon_mask_r = (primmuon_rows_r & (_ptmp.rec.dlp.particles.ke >= 25.0)).groupby(level=int_levels).any()
+    pion_mask_r = (primpion_rows_r & (_ptmp.rec.dlp.particles.ke >= 25.0)).groupby(level=int_levels).any()
+    proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.ke >= 40.0)).groupby(level=int_levels).any()
+    subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.ke >= 40.0)).groupby(level=int_levels).any()
+    photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= 100.0)).groupby(level=int_levels).any()
+    ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.ke >= 500.0)).groupby(level=int_levels).any()
     ele_softmax_r = (primele_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I1'] > 0.9)).groupby(level=int_levels).any()
     ele_primary_r = (primele_rows_r & (_ptmp.rec.dlp.particles.primary_scores['I1'] > 0.99)).groupby(level=int_levels).any()
     proton_softmax_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I4'] > 0.75)).groupby(level=int_levels).any()
     vertex_distance_r = (primele_rows_r & (_ptmp.rec.dlp.particles.vertex_distance < 3.5)).groupby(level=int_levels).any()
     ele_dedx_r = (primele_rows_r & (_ptmp.rec.dlp.particles.start_dedx < 4.0)).groupby(level=int_levels).any()
 
-    ele_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primele_rows_r).groupby(level=int_levels).first()
+    ele_energy_r = _ptmp.rec.dlp.particles.ke.where(primele_rows_r).groupby(level=int_levels).first()
     ele_dedx_r = _ptmp.rec.dlp.particles.start_dedx.where(primele_rows_r).groupby(level=int_levels).first()
     ele_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I1'].where(primele_rows_r).groupby(level=int_levels).first()
     ele_primary_r = _ptmp.rec.dlp.particles.primary_scores['I1'].where(primele_rows_r).groupby(level=int_levels).first()
     ele_vertex_distance_r = _ptmp.rec.dlp.particles.vertex_distance.where(primele_rows_r).groupby(level=int_levels).first()
-    muon_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primmuon_rows_r).groupby(level=int_levels).first()
-    pion_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primpion_rows_r).groupby(level=int_levels).first()
-    proton_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_energy_r = _ptmp.rec.dlp.particles.ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_r = _ptmp.rec.dlp.particles.ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_r = _ptmp.rec.dlp.particles.ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primproton_rows_r).groupby(level=int_levels).first()
+    ele_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primele_rows_r).groupby(level=int_levels).first()
+    photon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(subprimproton_rows_r).groupby(level=int_levels).first()
     proton_p_r = _ptmp.rec.dlp.particles.p.where(primproton_rows_r).groupby(level=int_levels).first()
     proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(primproton_rows_r).groupby(level=int_levels).first()
-    subprim_proton_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_r = _ptmp.rec.dlp.particles.ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_p_r = _ptmp.rec.dlp.particles.p.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
-    photon_energy_r = _ptmp.rec.dlp.particles.calo_ke.where(primphoton_rows_r).groupby(level=int_levels).first()
+    photon_energy_r = _ptmp.rec.dlp.particles.ke.where(primphoton_rows_r).groupby(level=int_levels).first()
 
-    ele_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primele_rows_t).groupby(level=int_levels).first()
-    muon_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
-    pion_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primpion_rows_t).groupby(level=int_levels).first()
-    proton_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primproton_rows_t).groupby(level=int_levels).first()
+    ele_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primele_rows_t).groupby(level=int_levels).first()
+    muon_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primmuon_rows_t).groupby(level=int_levels).first()
+    pion_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primpion_rows_t).groupby(level=int_levels).first()
+    proton_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primproton_rows_t).groupby(level=int_levels).first()
+    photon_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primphoton_rows_t).groupby(level=int_levels).first()
+    muon_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
+    pion_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primpion_rows_t).groupby(level=int_levels).first()
+    proton_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primproton_rows_t).groupby(level=int_levels).first()
+    muon_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
+    pion_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primpion_rows_t).groupby(level=int_levels).first()
+    proton_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primproton_rows_t).groupby(level=int_levels).first()
     proton_p_t = _ptmp.rec.dlp_true.particles.p.where(primproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
+    subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
     subprim_proton_p_t = _ptmp.rec.dlp_true.particles.p.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    photon_energy_t = _ptmp.rec.dlp_true.particles.calo_ke.where(primphoton_rows_t).groupby(level=int_levels).first()
+    subprim_proton_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
+    subprim_proton_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
+    subprim_proton_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(subprimproton_rows_t).groupby(level=int_levels).first()
+    muon_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primmuon_rows_t).groupby(level=int_levels).first()
+    pion_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primpion_rows_t).groupby(level=int_levels).first()
+    proton_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primproton_rows_t).groupby(level=int_levels).first()
+    ele_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primele_rows_t).groupby(level=int_levels).first()
+    photon_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primphoton_rows_t).groupby(level=int_levels).first()
 
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
     # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
@@ -336,6 +367,21 @@ def make_nueNp0Pi_df(f):
                         ('subprim_proton_p_true', subprim_proton_p_t),
                         ('photon_energy_true',   photon_energy_t),
 
+                        ('muon_energy_csda_true', muon_energy_csda_t),
+                        ('pion_energy_csda_true', pion_energy_csda_t),
+                        ('proton_energy_csda_true', proton_energy_csda_t),
+                        ('subprim_proton_energy_csda_true', subprim_proton_energy_csda_t),
+                        ('muon_energy_mcs_true', muon_energy_mcs_t),
+                        ('pion_energy_mcs_true', pion_energy_mcs_t),
+                        ('proton_energy_mcs_true', proton_energy_mcs_t),
+                        ('subprim_proton_energy_mcs_true', subprim_proton_energy_mcs_t),
+                        ('muon_contained_true', muon_contained_t),
+                        ('pion_contained_true', pion_contained_t),
+                        ('proton_contained_true', proton_contained_t),
+                        ('subprim_proton_contained_true', subprim_proton_contained_t),
+                        ('ele_contained_true', ele_contained_t),
+                        ('photon_contained_true', photon_contained_t),
+
                         ('del_alpha_lp_true', tki_lp_mc_true['del_alpha']),
                         ('del_phi_lp_true',   tki_lp_mc_true['del_phi']),
                         ('del_Tp_lp_true',    tki_lp_mc_true['del_Tp']),
@@ -345,6 +391,12 @@ def make_nueNp0Pi_df(f):
 
                         ('lp_open_angle_true', lp_open_angle_true),
                         ('lepton_beam_angle_true', lepton_beam_angle_true),
+
+                        ("photon_count_true",   photon_count_true),
+                        ("electron_count_true", electron_count_true),
+                        ("muon_count_true",     muon_count_true),
+                        ("pion_count_true",     pion_count_true),
+                        ("proton_count_true",   proton_count_true),
 
                         ('true_signal1p', true_signal1p),
                         ('true_signalNp', true_signalNp),
@@ -386,6 +438,21 @@ def make_nueNp0Pi_df(f):
                         ('subprim_proton_softmax_reco', subprim_proton_softmax_r),
                         ('photon_energy_reco',   photon_energy_r),
 
+                        ('muon_energy_csda_reco', muon_energy_csda_r),
+                        ('pion_energy_csda_reco', pion_energy_csda_r),
+                        ('proton_energy_csda_reco', proton_energy_csda_r),
+                        ('subprim_proton_energy_csda_reco', subprim_proton_energy_csda_r),
+                        ('muon_energy_mcs_reco', muon_energy_mcs_r),
+                        ('pion_energy_mcs_reco', pion_energy_mcs_r),
+                        ('proton_energy_mcs_reco', proton_energy_mcs_r),
+                        ('subprim_proton_energy_mcs_reco', subprim_proton_energy_mcs_r),
+                        ('muon_contained_reco', muon_contained_r),
+                        ('pion_contained_reco', pion_contained_r),
+                        ('proton_contained_reco', proton_contained_r),
+                        ('subprim_proton_contained_reco', subprim_proton_contained_r),
+                        ('ele_contained_reco', ele_contained_r),
+                        ('photon_contained_reco', photon_contained_r),
+
                         ('del_alpha_lp_reco', tki_lp_mc['del_alpha']),
                         ('del_phi_lp_reco',   tki_lp_mc['del_phi']),
                         ('del_Tp_lp_reco',    tki_lp_mc['del_Tp']),
@@ -410,5 +477,7 @@ def make_nueNp0Pi_df(f):
     # slcdf = slcdf[slcdf.rec.dlp['is_fiducial'] == 1]
     # slcdf = slcdf[slcdf.rec.dlp['is_flash_matched'] == 1]
     # slcdf = slcdf[slcdf.rec.dlp['is_contained'] == 1]
+
+    slcdf = multicol_merge(slcdf, hdrdf, left_index=True, right_index=True, how="left", validate="many_to_one")
 
     return truth_match_spine(slcdf, mcdf) 
