@@ -113,6 +113,66 @@ def get_second_highest_ke_particle_idx(pfpdf, pdg, truth=False):
     best_idx = second.groupby(level=int_levels).idxmax()
     return best_idx.apply(lambda x: x[pfpdf.index.nlevels - 1])
 
+def _remap_true_to_reco(series, slcdf):
+    """Map a Series indexed by [entry, rec.dlp_true..index] to slcdf's [entry, rec.dlp..index].
+
+    Uses the reco↔true interaction matching stored as a column in slcdf from make_spine_int_df.
+    Left-joins so unmatched reco interactions (no true match) get NaN."""
+    true_int_col = pad_column_name(("rec.dlp_true..index",), slcdf)
+    mapping = slcdf[[true_int_col]].reset_index()
+    mapping.columns = pd.Index(["entry", "reco_int", "true_int"])
+    vals = series.reset_index()
+    vals.columns = pd.Index(["entry", "true_int", "val"])
+    result = (
+        mapping.merge(vals, on=["entry", "true_int"], how="left")
+               .set_index(["entry", "reco_int"])["val"]
+    )
+    result.index.names = slcdf.index.names
+    return result
+
+
+def _get_highest_ke_true_primary_idx(spinetpart_df, pdg):
+    """Return the true particle index of the highest-KE primary particle with the given PDG
+    per true interaction. Searches all true particles regardless of reco matching.
+    Returns a Series indexed by [entry, rec.dlp_true..index]."""
+    ke_col      = pad_column_name(('rec', 'dlp_true', 'particles', 'ke'),         spinetpart_df)
+    pdg_col     = pad_column_name(('rec', 'dlp_true', 'particles', 'pdg_code'),   spinetpart_df)
+    primary_col = pad_column_name(('rec', 'dlp_true', 'particles', 'is_primary'), spinetpart_df)
+    int_levels  = list(range(spinetpart_df.index.nlevels - 1))
+    empty = pd.Series(dtype=float,
+                      index=pd.MultiIndex.from_tuples([], names=spinetpart_df.index.names[:len(int_levels)]))
+    filtered = spinetpart_df[(abs(spinetpart_df[pdg_col]) == pdg) &
+                             (spinetpart_df[ke_col] > 0) &
+                             (spinetpart_df[primary_col] == True)]
+    if filtered.empty:
+        return empty
+    best_idx = filtered[ke_col].groupby(level=int_levels).idxmax()
+    return best_idx.apply(lambda x: x[spinetpart_df.index.nlevels - 1])
+
+
+def _get_second_highest_ke_true_primary_idx(spinetpart_df, pdg):
+    """Return the true particle index of the second highest-KE primary particle with the given PDG
+    per true interaction. Searches all true particles regardless of reco matching.
+    Returns a Series indexed by [entry, rec.dlp_true..index]."""
+    ke_col      = pad_column_name(('rec', 'dlp_true', 'particles', 'ke'),         spinetpart_df)
+    pdg_col     = pad_column_name(('rec', 'dlp_true', 'particles', 'pdg_code'),   spinetpart_df)
+    primary_col = pad_column_name(('rec', 'dlp_true', 'particles', 'is_primary'), spinetpart_df)
+    int_levels  = list(range(spinetpart_df.index.nlevels - 1))
+    empty = pd.Series(dtype=float,
+                      index=pd.MultiIndex.from_tuples([], names=spinetpart_df.index.names[:len(int_levels)]))
+    filtered = spinetpart_df[(abs(spinetpart_df[pdg_col]) == pdg) &
+                             (spinetpart_df[ke_col] > 0) &
+                             (spinetpart_df[primary_col] == True)]
+    if filtered.empty:
+        return empty
+    ranks = filtered[ke_col].groupby(level=int_levels).rank(method='first', ascending=False)
+    second = filtered[ke_col][ranks == 2]
+    if second.empty:
+        return empty
+    best_idx = second.groupby(level=int_levels).idxmax()
+    return best_idx.apply(lambda x: x[spinetpart_df.index.nlevels - 1])
+
+
 def make_nueNp0Pi_df(f):
     det = loadbranches(f["recTree"], ["rec.hdr.det"]).rec.hdr.det
     if (1 == det.unique()):
@@ -128,6 +188,11 @@ def make_nueNp0Pi_df(f):
 
     mcdf = make_mcnudf_nuecc(f)
 
+    # Load all true particles directly — used for truth computations to avoid the
+    # reco-matching bias in pfpdf (which only contains true particles matched to a reco particle).
+    spinetpart_df = loadbranches(f["recTree"], spinetpart_branches)
+    rename_to_XYZ(spinetpart_df, ["momentum", "end_point", "start_point", "start_dir", "end_dir", "vertex"])
+
     ## add candidate particle indices to slcdf while it is still interaction-level (2-level index)
     ## so that multicol_merge aligns cleanly; the subsequent right merge with pfpdf
     ## broadcasts these interaction-level values down to every particle row
@@ -139,12 +204,22 @@ def make_nueNp0Pi_df(f):
         idx_df = idx.rename(col).to_frame()
         slcdf = multicol_merge(slcdf, idx_df, left_index=True, right_index=True, how='left')
 
-    for pdg, label in [(11, 'true_primele'), (13, 'true_primmu'), (211, 'true_primpi'), (2212, 'true_primpr'), (22, 'true_primph')]:
-        idx = get_highest_ke_particle_idx(pfpdf, pdg, truth=True)
-        idx.index.names = slcdf.index.names
+    # Pre-compute truth candidate indices once from spinetpart_df; reused below for both
+    # storing in slcdf and broadcasting into spinetpart_df particle space for masks/kinematics.
+    _prim_ele_idx   = _get_highest_ke_true_primary_idx(spinetpart_df, 11)
+    _prim_mu_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 13)
+    _prim_pi_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 211)
+    _prim_pr_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 2212)
+    _prim_ph_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 22)
+    _subprim_pr_idx = _get_second_highest_ke_true_primary_idx(spinetpart_df, 2212)
+
+    for idx, label in [(_prim_ele_idx, 'true_primele'), (_prim_mu_idx, 'true_primmu'),
+                       (_prim_pi_idx, 'true_primpi'),   (_prim_pr_idx, 'true_primpr'),
+                       (_prim_ph_idx, 'true_primph')]:
+        mapped = _remap_true_to_reco(idx, slcdf)
+        mapped.index.names = slcdf.index.names
         col = tuple(['rec', 'dlp_true', label] + [''] * (nlevel - 3))
-        idx_df = idx.rename(col).to_frame()
-        slcdf = multicol_merge(slcdf, idx_df, left_index=True, right_index=True, how='left')
+        slcdf = multicol_merge(slcdf, mapped.rename(col).to_frame(), left_index=True, right_index=True, how='left')
 
     # get subleading proton
     idx = get_second_highest_ke_particle_idx(pfpdf, 2212)
@@ -153,26 +228,19 @@ def make_nueNp0Pi_df(f):
     idx_df = idx.rename(col).to_frame()
     slcdf = multicol_merge(slcdf, idx_df, left_index=True, right_index=True, how='left')
 
-    idx = get_second_highest_ke_particle_idx(pfpdf, 2212, truth=True)
-    idx.index.names = slcdf.index.names
+    mapped = _remap_true_to_reco(_subprim_pr_idx, slcdf)
+    mapped.index.names = slcdf.index.names
     col = tuple(['rec', 'dlp_true', 'true_subprimpr'] + [''] * (nlevel - 3))
-    idx_df = idx.rename(col).to_frame()
-    slcdf = multicol_merge(slcdf, idx_df, left_index=True, right_index=True, how='left')
+    slcdf = multicol_merge(slcdf, mapped.rename(col).to_frame(), left_index=True, right_index=True, how='left')
 
     # expand to particle level temporarily to compute truth category masks
     _ptmp = multicol_merge(slcdf, pfpdf, left_index=True, right_index=True, how="right", validate="one_to_many")
 
     # create truth categories — all masks reduced back to event level via groupby
-    int_levels = list(range(_ptmp.index.nlevels - 1))  # all levels except particle
+    int_levels = list(range(_ptmp.index.nlevels - 1))  # all levels except particle (for reco)
     particle_idx       = pd.Series(_ptmp.index.get_level_values(_ptmp.index.names[-1]), index=_ptmp.index)
-    
-    primele_rows_t       = particle_idx == _ptmp.rec.dlp_true.true_primele
-    primproton_rows_t    = particle_idx == _ptmp.rec.dlp_true.true_primpr
-    subprimproton_rows_t = particle_idx == _ptmp.rec.dlp_true.true_subprimpr
-    primmuon_rows_t      = particle_idx == _ptmp.rec.dlp_true.true_primmu
-    primpion_rows_t      = particle_idx == _ptmp.rec.dlp_true.true_primpi
-    primphoton_rows_t    = particle_idx == _ptmp.rec.dlp_true.true_primph
 
+    # reco particle row selectors
     primele_rows_r       = particle_idx == _ptmp.rec.dlp.primele
     primproton_rows_r    = particle_idx == _ptmp.rec.dlp.primpr
     subprimproton_rows_r = particle_idx == _ptmp.rec.dlp.subprimpr
@@ -180,23 +248,62 @@ def make_nueNp0Pi_df(f):
     primpion_rows_r      = particle_idx == _ptmp.rec.dlp.primpi
     primphoton_rows_r    = particle_idx == _ptmp.rec.dlp.primph
 
-    nu_mask       = (_ptmp.rec.dlp_true.nu_id >= 0).groupby(level=int_levels).first()
-    cc_mask        = (_ptmp.rec.dlp_true.current_type == 0).groupby(level=int_levels).first()
-    nupdg_mask     = (abs(_ptmp.rec.dlp_true.pdg_code) == 12).groupby(level=int_levels).first()
-    fiducial_mask_t  = (_ptmp.rec.dlp_true.is_fiducial == 1).groupby(level=int_levels).first()
-    ele_mask_t       = (primele_rows_t    & (_ptmp.rec.dlp_true.particles.ke >= 500.0)).groupby(level=int_levels).any()
-    proton_mask_t    = (primproton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 40.0 )).groupby(level=int_levels).any()
-    subprimproton_mask_t = (subprimproton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 40.0 )).groupby(level=int_levels).any()
-    muon_mask_t      = (primmuon_rows_t   & (_ptmp.rec.dlp_true.particles.ke >= 25.0 )).groupby(level=int_levels).any()
-    pion_mask_t      = (primpion_rows_t   & (_ptmp.rec.dlp_true.particles.ke >= 25.0 )).groupby(level=int_levels).any()
-    photon_mask_t    = (primphoton_rows_t & (_ptmp.rec.dlp_true.particles.ke >= 100.0)).groupby(level=int_levels).any()
+    # truth particle row selectors — operate directly in spinetpart_df (all true particles,
+    # not just those matched to a reco particle)
+    _true_int_levels = list(range(spinetpart_df.index.nlevels - 1))  # [0, 1]
+    _particle_idx_t = pd.Series(spinetpart_df.index.get_level_values(-1), index=spinetpart_df.index)
 
-    ele_mask_noKE_t       = primele_rows_t.groupby(level=int_levels).any()
-    proton_mask_noKE_t    = primproton_rows_t.groupby(level=int_levels).any()
-    subprimproton_mask_noKE_t = subprimproton_rows_t.groupby(level=int_levels).any()
-    muon_mask_noKE_t      = primmuon_rows_t.groupby(level=int_levels).any()
-    pion_mask_noKE_t      = primpion_rows_t.groupby(level=int_levels).any()
-    photon_mask_noKE_t    = primphoton_rows_t.groupby(level=int_levels).any()
+    def _bc(idx_series):
+        """Broadcast a true-interaction-level Series to spinetpart_df's particle level."""
+        result = idx_series.reindex(spinetpart_df.index.droplevel(-1))
+        result.index = spinetpart_df.index
+        return result
+
+    primele_rows_t       = _particle_idx_t == _bc(_prim_ele_idx)
+    primproton_rows_t    = _particle_idx_t == _bc(_prim_pr_idx)
+    subprimproton_rows_t = _particle_idx_t == _bc(_subprim_pr_idx)
+    primmuon_rows_t      = _particle_idx_t == _bc(_prim_mu_idx)
+    primpion_rows_t      = _particle_idx_t == _bc(_prim_pi_idx)
+    primphoton_rows_t    = _particle_idx_t == _bc(_prim_ph_idx)
+
+    # interaction-level truth properties from the reco↔true interaction match already in slcdf.
+    # .fillna(False).astype(bool) guards against float64 dtype (introduced when slcdf has reco
+    # interactions with no matched true interaction, causing NaN in the joined columns).
+    nu_mask         = (slcdf.rec.dlp_true.nu_id >= 0).fillna(False).astype(bool)
+    cc_mask         = (slcdf.rec.dlp_true.current_type == 0).fillna(False).astype(bool)
+    nupdg_mask      = (abs(slcdf.rec.dlp_true.pdg_code) == 12).fillna(False).astype(bool)
+    fiducial_mask_t = (slcdf.rec.dlp_true.is_fiducial == 1).fillna(False).astype(bool)
+
+    # spinetpart_df column name helpers
+    _stp_ke        = pad_column_name(('rec', 'dlp_true', 'particles', 'ke'),           spinetpart_df)
+    _stp_csda      = pad_column_name(('rec', 'dlp_true', 'particles', 'csda_ke'),      spinetpart_df)
+    _stp_mcs       = pad_column_name(('rec', 'dlp_true', 'particles', 'mcs_ke'),       spinetpart_df)
+    _stp_p         = pad_column_name(('rec', 'dlp_true', 'particles', 'p'),            spinetpart_df)
+    _stp_contained = pad_column_name(('rec', 'dlp_true', 'particles', 'is_contained'), spinetpart_df)
+    _stp_pdg       = pad_column_name(('rec', 'dlp_true', 'particles', 'pdg_code'),     spinetpart_df)
+    _stp_valid     = pad_column_name(('rec', 'dlp_true', 'particles', 'is_valid'),     spinetpart_df)
+
+    def _reduce_t(mask):
+        """Reduce a boolean particle-level mask in spinetpart_df to reco-interaction level via any()."""
+        return _remap_true_to_reco(mask.groupby(level=_true_int_levels).any(), slcdf).fillna(False).astype(bool)
+
+    def _first_t(vals):
+        """Reduce particle-level values in spinetpart_df to reco-interaction level via first()."""
+        return _remap_true_to_reco(vals.groupby(level=_true_int_levels).first(), slcdf)
+
+    ele_mask_t           = _reduce_t(primele_rows_t    & (spinetpart_df[_stp_ke] >= 500.0))
+    proton_mask_t        = _reduce_t(primproton_rows_t & (spinetpart_df[_stp_ke] >= 40.0 ))
+    subprimproton_mask_t = _reduce_t(subprimproton_rows_t & (spinetpart_df[_stp_ke] >= 40.0 ))
+    muon_mask_t          = _reduce_t(primmuon_rows_t   & (spinetpart_df[_stp_ke] >= 25.0 ))
+    pion_mask_t          = _reduce_t(primpion_rows_t   & (spinetpart_df[_stp_ke] >= 25.0 ))
+    photon_mask_t        = _reduce_t(primphoton_rows_t & (spinetpart_df[_stp_ke] >= 100.0))
+
+    ele_mask_noKE_t           = _reduce_t(primele_rows_t)
+    proton_mask_noKE_t        = _reduce_t(primproton_rows_t)
+    subprimproton_mask_noKE_t = _reduce_t(subprimproton_rows_t)
+    muon_mask_noKE_t          = _reduce_t(primmuon_rows_t)
+    pion_mask_noKE_t          = _reduce_t(primpion_rows_t)
+    photon_mask_noKE_t        = _reduce_t(primphoton_rows_t)
 
     fiducial_mask_r = (_ptmp.rec.dlp.is_fiducial == 1).groupby(level=int_levels).first()
     flash_match_r = (_ptmp.rec.dlp.is_flash_matched == 1).groupby(level=int_levels).first()
@@ -242,28 +349,28 @@ def make_nueNp0Pi_df(f):
     subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
     photon_energy_r = _ptmp.rec.dlp.particles.ke.where(primphoton_rows_r).groupby(level=int_levels).first()
 
-    ele_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primele_rows_t).groupby(level=int_levels).first()
-    muon_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primmuon_rows_t).groupby(level=int_levels).first()
-    pion_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primpion_rows_t).groupby(level=int_levels).first()
-    proton_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primproton_rows_t).groupby(level=int_levels).first()
-    photon_energy_t = _ptmp.rec.dlp_true.particles.ke.where(primphoton_rows_t).groupby(level=int_levels).first()
-    muon_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
-    pion_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primpion_rows_t).groupby(level=int_levels).first()
-    proton_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(primproton_rows_t).groupby(level=int_levels).first()
-    muon_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primmuon_rows_t).groupby(level=int_levels).first()
-    pion_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primpion_rows_t).groupby(level=int_levels).first()
-    proton_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(primproton_rows_t).groupby(level=int_levels).first()
-    proton_p_t = _ptmp.rec.dlp_true.particles.p.where(primproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_energy_t = _ptmp.rec.dlp_true.particles.ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_p_t = _ptmp.rec.dlp_true.particles.p.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_energy_csda_t = _ptmp.rec.dlp_true.particles.csda_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_energy_mcs_t = _ptmp.rec.dlp_true.particles.mcs_ke.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    subprim_proton_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(subprimproton_rows_t).groupby(level=int_levels).first()
-    muon_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primmuon_rows_t).groupby(level=int_levels).first()
-    pion_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primpion_rows_t).groupby(level=int_levels).first()
-    proton_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primproton_rows_t).groupby(level=int_levels).first()
-    ele_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primele_rows_t).groupby(level=int_levels).first()
-    photon_contained_t = _ptmp.rec.dlp_true.particles.is_contained.where(primphoton_rows_t).groupby(level=int_levels).first()
+    ele_energy_t         = _first_t(spinetpart_df[_stp_ke].where(primele_rows_t))
+    muon_energy_t        = _first_t(spinetpart_df[_stp_ke].where(primmuon_rows_t))
+    pion_energy_t        = _first_t(spinetpart_df[_stp_ke].where(primpion_rows_t))
+    proton_energy_t      = _first_t(spinetpart_df[_stp_ke].where(primproton_rows_t))
+    photon_energy_t      = _first_t(spinetpart_df[_stp_ke].where(primphoton_rows_t))
+    muon_energy_csda_t   = _first_t(spinetpart_df[_stp_csda].where(primmuon_rows_t))
+    pion_energy_csda_t   = _first_t(spinetpart_df[_stp_csda].where(primpion_rows_t))
+    proton_energy_csda_t = _first_t(spinetpart_df[_stp_csda].where(primproton_rows_t))
+    muon_energy_mcs_t    = _first_t(spinetpart_df[_stp_mcs].where(primmuon_rows_t))
+    pion_energy_mcs_t    = _first_t(spinetpart_df[_stp_mcs].where(primpion_rows_t))
+    proton_energy_mcs_t  = _first_t(spinetpart_df[_stp_mcs].where(primproton_rows_t))
+    proton_p_t           = _first_t(spinetpart_df[_stp_p].where(primproton_rows_t))
+    subprim_proton_energy_t      = _first_t(spinetpart_df[_stp_ke].where(subprimproton_rows_t))
+    subprim_proton_p_t           = _first_t(spinetpart_df[_stp_p].where(subprimproton_rows_t))
+    subprim_proton_energy_csda_t = _first_t(spinetpart_df[_stp_csda].where(subprimproton_rows_t))
+    subprim_proton_energy_mcs_t  = _first_t(spinetpart_df[_stp_mcs].where(subprimproton_rows_t))
+    subprim_proton_contained_t   = _first_t(spinetpart_df[_stp_contained].where(subprimproton_rows_t))
+    muon_contained_t     = _first_t(spinetpart_df[_stp_contained].where(primmuon_rows_t))
+    pion_contained_t     = _first_t(spinetpart_df[_stp_contained].where(primpion_rows_t))
+    proton_contained_t   = _first_t(spinetpart_df[_stp_contained].where(primproton_rows_t))
+    ele_contained_t      = _first_t(spinetpart_df[_stp_contained].where(primele_rows_t))
+    photon_contained_t   = _first_t(spinetpart_df[_stp_contained].where(primphoton_rows_t))
 
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
     # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
@@ -275,29 +382,31 @@ def make_nueNp0Pi_df(f):
     pion_count_reco     = ((_pdg_r == 211)  & (_valid_r == 1)).groupby(level=int_levels).sum()
     proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
 
-    _pdg_t              = abs(_ptmp.rec.dlp_true.particles.pdg_code)
-    _valid_t            = _ptmp.rec.dlp_true.particles.is_valid
-    photon_count_true   = ((_pdg_t == 22)   & (_valid_t == 1)).groupby(level=int_levels).sum()
-    electron_count_true = ((_pdg_t == 11)   & (_valid_t == 1)).groupby(level=int_levels).sum()
-    muon_count_true     = ((_pdg_t == 13)   & (_valid_t == 1)).groupby(level=int_levels).sum()
-    pion_count_true     = ((_pdg_t == 211)  & (_valid_t == 1)).groupby(level=int_levels).sum()
-    proton_count_true   = ((_pdg_t == 2212) & (_valid_t == 1)).groupby(level=int_levels).sum()
+    _pdg_t_abs = abs(spinetpart_df[_stp_pdg])
+    _valid_t   = spinetpart_df[_stp_valid]
+    photon_count_true   = _remap_true_to_reco(((_pdg_t_abs == 22)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
+    electron_count_true = _remap_true_to_reco(((_pdg_t_abs == 11)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
+    muon_count_true     = _remap_true_to_reco(((_pdg_t_abs == 13)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
+    pion_count_true     = _remap_true_to_reco(((_pdg_t_abs == 211)  & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
+    proton_count_true   = _remap_true_to_reco(((_pdg_t_abs == 2212) & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
 
     tki_mc = get_tki_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels)
 
     tki_lp_mc = get_tki_spine_lp(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels)
 
-    tki_mc_true = get_tki_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, int_levels)
+    _tki_mc_true_pre = get_tki_spine(spinetpart_df.rec.dlp_true.particles, _bc(_prim_ele_idx), _true_int_levels)
+    tki_mc_true = {k: _remap_true_to_reco(v, slcdf) for k, v in _tki_mc_true_pre.items()}
 
-    tki_lp_mc_true = get_tki_spine_lp(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, _ptmp.rec.dlp_true.true_primpr, int_levels)
+    _tki_lp_mc_true_pre = get_tki_spine_lp(spinetpart_df.rec.dlp_true.particles, _bc(_prim_ele_idx), _bc(_prim_pr_idx), _true_int_levels)
+    tki_lp_mc_true = {k: _remap_true_to_reco(v, slcdf) for k, v in _tki_lp_mc_true_pre.items()}
 
     lp_open_angle = np.cos(get_lp_open_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels))
 
     lepton_beam_angle = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels))
 
-    lp_open_angle_true = np.cos(get_lp_open_angle_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, _ptmp.rec.dlp_true.true_primpr, int_levels))
+    lp_open_angle_true = np.cos(_remap_true_to_reco(get_lp_open_angle_spine(spinetpart_df.rec.dlp_true.particles, _bc(_prim_ele_idx), _bc(_prim_pr_idx), _true_int_levels), slcdf))
 
-    lepton_beam_angle_true = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp_true.particles, _ptmp.rec.dlp_true.true_primele, int_levels))
+    lepton_beam_angle_true = np.cos(_remap_true_to_reco(get_lepton_beam_angle_spine(spinetpart_df.rec.dlp_true.particles, _bc(_prim_ele_idx), _true_int_levels), slcdf))
 
     sbnd_fiducial = InFV(slcdf.rec.dlp.vertex, det="SBND_Gen1")
     sbnd_fiducial_true = InFV(slcdf.rec.dlp_true.vertex, det="SBND_Gen1")
@@ -344,6 +453,12 @@ def make_nueNp0Pi_df(f):
     bkgd_other = ~true_signal1p & ~true_signalNp & ~bkgd_oofv & ~bkgd_oops & \
                 ~bkgd_pi & ~bkgd_mu & ~bkgd_photon & ~bkgd_nueOther & ~bkgd_numu & ~bkgd_nc #& \
                 #(~nu_mask)
+
+    assert not (pion_mask_t & true_signal1p).any(), \
+        f"pion_mask_t True on {(pion_mask_t & true_signal1p).sum()} rows also flagged true_signal1p"
+    assert not (pion_mask_t & true_signalNp).any(), \
+        f"pion_mask_t True on {(pion_mask_t & true_signalNp).sum()} rows also flagged true_signalNp"
+
     
     for label, mask, in [
                         ('nu_mask',       nu_mask),
