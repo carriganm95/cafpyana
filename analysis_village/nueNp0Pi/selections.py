@@ -433,13 +433,13 @@ def good_proton(df):
     return df[df.rec.dlp.proton_mask_reco == 1]
 
 def electron_softmax(df, th=ELE_SOFTMAX_TH):
-    return df[df.rec.dlp.ele_softmax_reco > th]
+    return df[df.rec.dlp.ele_softmax_reco >= th]
 
 def electron_primary(df, th=ELE_PRIMARY_TH):
-    return df[df.rec.dlp.ele_primary_reco > th]
+    return df[df.rec.dlp.ele_primary_reco >= th]
 
 def proton_softmax(df, th=P_SOFTMAX_TH):
-    return df[df.rec.dlp.proton_softmax_reco > th]
+    return df[df.rec.dlp.proton_softmax_reco >= th]
 
 def electron_vertex_distance(df, th=ELE_VTXDIST_TH):
     return df[df.rec.dlp.ele_vertex_distance_reco < th]

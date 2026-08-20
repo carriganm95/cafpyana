@@ -421,7 +421,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="no_muons",
-        label="No Muons > 25 MeV",
+        label="No Muons >= 25 MeV",
         **_evt_cut(no_muons),
         plots=[],
         save_for_efficiency=True,
@@ -430,7 +430,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="no_pions",
-        label="No Pions > 25 MeV",
+        label="No Pions >= 25 MeV",
         **_evt_cut(no_pions),
         plots=[],
         save_for_efficiency=True,
@@ -439,7 +439,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="no_photons",
-        label="No Photons > 100 MeV",
+        label="No Photons >= 100 MeV",
         **_evt_cut(no_photons),
         plots=[
             PlotSpec(
@@ -456,7 +456,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="good_electron",
-        label="Electron > 500 MeV",
+        label="Electron >= 500 MeV",
         **_evt_cut(good_electron),
         plots=[],
         save_for_efficiency=True,
@@ -465,7 +465,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="good_proton",
-        label="Proton > 40 MeV",
+        label="Proton >= 40 MeV",
         **_evt_cut(good_proton),
         plots=[],
         save_for_efficiency=True,
@@ -474,7 +474,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="electron_softmax",
-        label="Electron Softmax > 0.9",
+        label="Electron Softmax >= 0.9",
         **_evt_cut(electron_softmax),
         plots=[],
         save_for_efficiency=True,
@@ -483,7 +483,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key='electron_primary',
-        label='Electron Primary Score > 0.99',
+        label='Electron Primary Score >= 0.99',
         **_evt_cut(electron_primary),
         plots=[],
         save_for_efficiency=True,
@@ -492,7 +492,7 @@ def build_pipeline() -> List[Stage]:
 
     stages.append(Stage(
         key="proton_softmax",
-        label="Proton Softmax > 0.75",
+        label="Proton Softmax >= 0.75",
         **_evt_cut(proton_softmax),
         plots=[],
         save_for_efficiency=True,

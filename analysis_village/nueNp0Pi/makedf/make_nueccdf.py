@@ -2,6 +2,13 @@ from makedf.makedf import *
 from pyanalib.pandas_helpers import *
 from makedf.util import *
 from pyanalib.variable_calculator import get_tki_spine, get_tki_spine_lp, get_lp_open_angle_spine, get_lepton_beam_angle_spine
+from analysis_village.nueNp0Pi.config.settings import (
+    DETECTOR, PER_TPC_INCATHODE_CM,
+    NU_SCORE_TH, SAVE_NTRKS, TRACKSCORE_TH, VTXDIST_TH,
+    MU_CHI2MU_TH, MU_CHI2P_TH, MU_LEN_TH, QUAL_TH, P_CHI2P_TH, P_LEN_TH,
+    MU_PLO_TH, MU_PHI_TH, P_PLO_TH, P_PHI_TH,
+    ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
+)
 
 ## == For additional column in mcdf with primary particle multiplicities
 ## ==== "<column name>": ["<particle name>", <KE cut in GeV>]
@@ -596,3 +603,27 @@ def make_nueNp0Pi_df(f):
     slcdf = multicol_merge(slcdf, hdrdf, left_index=True, right_index=True, how="left", validate="many_to_one")
 
     return truth_match_spine(slcdf, mcdf) 
+
+
+def make_nueNp0Pi_selected_df(f):
+
+    df = make_nueNp0Pi_df(f)
+
+    # pre-selection cuts
+    df = df[(df.rec.dlp['is_fiducial'] == 1) & (df.rec.dlp['sbnd_fiducial_reco'] == 1)]
+    df = df[df.rec.dlp['is_flash_matched'] == 1]
+    df = df[df.rec.dlp['is_contained'] == 1]
+
+    # selection cuts
+    df = df[df.rec.dlp['muon_mask_reco'] == False]
+    df = df[df.rec.dlp['pion_mask_reco'] == False]
+    df = df[df.rec.dlp['photon_mask_reco'] == False]
+    df = df[df.rec.dlp['ele_mask_reco'] == True]
+    df = df[df.rec.dlp['proton_mask_reco'] == True]
+    df = df[df.rec.dlp['ele_primary_reco'] >= ELE_PRIMARY_TH]
+    df = df[df.rec.dlp['ele_softmax_reco'] >= ELE_SOFTMAX_TH]
+    df = df[df.rec.dlp['proton_softmax_reco'] >= PROTON_SOFTMAX_TH]
+    df = df[df.rec.dlp['ele_dedx_reco'] < ELE_DEDX_TH]
+    df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VERTEX_DISTANCE_TH]
+
+    return df
