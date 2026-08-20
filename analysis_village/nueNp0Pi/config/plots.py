@@ -74,6 +74,22 @@ class VariableConfig(_BaseVariableConfig):
             xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
             response_matrix=True
         )
+    
+    @classmethod
+    def electron_energy_default(cls):
+        return cls(
+            var_save_name="electron-e",
+            var_plot_name="$E_e$",
+            var_labels=[r"$\mathrm{E_e}$ [MeV]", 
+            r"$\mathrm{E_e^{reco.}}$ [MeV]", 
+            r"$\mathrm{E_e^{true}}$ [MeV]"],
+            bins=np.linspace(0.0, 3000.0, 30),
+            var_evt_reco_col=('rec', 'dlp', 'ele_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'ele_energy_true', '', '', ''),
+            var_nu_col=('mc', 'e', 'genE'),
+            xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
+            response_matrix=True
+        )
 
     @classmethod
     def electron_energy_res(cls):

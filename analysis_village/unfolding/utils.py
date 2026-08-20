@@ -42,6 +42,8 @@ EPSILON = 1e-6 # clip overflow values greater than bins[-1] - EPSILON
 
 #  ====== calculation functions ======
 def get_clipped_evts(df, var_col, bins):
+    if isinstance(var_col, tuple) and len(var_col) > df.columns.nlevels:
+        var_col = var_col[:df.columns.nlevels]
     var = df[var_col]
     var = np.clip(var, bins[0], bins[-1] - EPSILON)
 
@@ -50,7 +52,7 @@ def get_clipped_evts(df, var_col, bins):
         weights = df.loc[:, 'pot_weight']
     else:
         print("No pot_weight column found, return 1 as pot scale (expected for data)")
-        weights = np.ones_like(var)
+        weights = pd.Series(np.ones(len(var)), index=var.index)
     return var, weights
 
 
