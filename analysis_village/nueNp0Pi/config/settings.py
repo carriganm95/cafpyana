@@ -117,28 +117,6 @@ gibuu_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B", "#BFB17C",
                      "darkgreen", "crimson", "sienna","gray"]
 
 
-# ===========================================================================
-# Reconstruction-level cut thresholds.
-# ===========================================================================
-# slice cuts
-NU_SCORE_TH   = 0.45
-SAVE_NTRKS    = 2
-# track quality cuts
-TRACKSCORE_TH = 0.5
-VTXDIST_TH    = 1.2
-# pid cuts
-MU_CHI2MU_TH  = 25
-MU_CHI2P_TH   = 100
-MU_LEN_TH     = 50
-QUAL_TH       = 0.2
-P_CHI2P_TH    = 90
-P_LEN_TH      = 0
-# kinematic cuts
-MU_PLO_TH     = 0.22
-MU_PHI_TH     = 1
-P_PLO_TH      = 0.3
-P_PHI_TH      = 1
-
 # nueNp0Pi PID/kinematic selection cuts (config/stages.py's build_pipeline() reco-cut
 # stages, in analysis_village.nueNp0Pi.selections). Named here (instead of literals in
 # selections.py) so config/stages.py's N_MINUS_1_VLINES can draw the exact same cut
@@ -150,3 +128,8 @@ ELE_PRIMARY_TH  = 0.99  # electron_primary(): ele_primary_reco > this
 P_SOFTMAX_TH    = 0.75  # proton_softmax(): proton_softmax_reco > this
 ELE_VTXDIST_TH  = 3.5   # electron_vertex_distance(): ele_vertex_distance_reco < this (cm)
 ELE_DEDX_TH     = 4     # electron_dedx(): ele_dedx_reco < this (MeV/cm)
+ELE_KE_TH       = 500    # electron_kinetic_energy(): ele_ke_reco > this (MeV)
+P_KE_TH         = 40    # proton_kinetic_energy(): proton_ke_reco > this (MeV)
+MU_KE_TH        = 25   # muon_kinetic_energy(): muon_ke_reco > this (MeV)
+PI_KE_TH        = 25    # pion_kinetic_energy(): pion_ke_reco > this (MeV)
+GAM_KE_TH       = 25    # gamma_kinetic_energy(): gamma_ke_reco > this (MeV)

@@ -4,20 +4,18 @@ from makedf.util import *
 from pyanalib.variable_calculator import get_tki_spine, get_tki_spine_lp, get_lp_open_angle_spine, get_lepton_beam_angle_spine
 from analysis_village.nueNp0Pi.config.settings import (
     DETECTOR, PER_TPC_INCATHODE_CM,
-    NU_SCORE_TH, SAVE_NTRKS, TRACKSCORE_TH, VTXDIST_TH,
-    MU_CHI2MU_TH, MU_CHI2P_TH, MU_LEN_TH, QUAL_TH, P_CHI2P_TH, P_LEN_TH,
-    MU_PLO_TH, MU_PHI_TH, P_PLO_TH, P_PHI_TH,
     ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
+    ELE_KE_TH, P_KE_TH, MU_KE_TH, PI_KE_TH, GAM_KE_TH
 )
 
 ## == For additional column in mcdf with primary particle multiplicities
 ## ==== "<column name>": ["<particle name>", <KE cut in GeV>]
 ## ==== <particle name> is used to collect PID and mass from the "PDG" dictionary
-TRUE_KE_THRESHOLDS = {"nmu_25MeV": ["muon", 0.025],
-                      "np_40MeV": ["proton", 0.040],
-                      "npi_25MeV": ["pipm", 0.025],
-                      "ne_500MeV": ["electron", 0.5],
-                      'ng_100MeV': ["gamma", 0.1]
+TRUE_KE_THRESHOLDS = {"nmu_25MeV": ["muon", MU_KE_TH],
+                      "np_40MeV": ["proton", P_KE_TH],
+                      "npi_25MeV": ["pipm", PI_KE_TH],
+                      "ne_500MeV": ["electron", ELE_KE_TH],
+                      'ng_100MeV': ["gamma", GAM_KE_TH]
                       }
 
 def make_mcnudf_nuecc(f,**args):
@@ -298,12 +296,12 @@ def make_nueNp0Pi_df(f):
         """Reduce particle-level values in spinetpart_df to reco-interaction level via first()."""
         return _remap_true_to_reco(vals.groupby(level=_true_int_levels).first(), slcdf)
 
-    ele_mask_t           = _reduce_t(primele_rows_t    & (spinetpart_df[_stp_ke] >= 500.0))
-    proton_mask_t        = _reduce_t(primproton_rows_t & (spinetpart_df[_stp_ke] >= 40.0 ))
-    subprimproton_mask_t = _reduce_t(subprimproton_rows_t & (spinetpart_df[_stp_ke] >= 40.0 ))
-    muon_mask_t          = _reduce_t(primmuon_rows_t   & (spinetpart_df[_stp_ke] >= 25.0 ))
-    pion_mask_t          = _reduce_t(primpion_rows_t   & (spinetpart_df[_stp_ke] >= 25.0 ))
-    photon_mask_t        = _reduce_t(primphoton_rows_t & (spinetpart_df[_stp_ke] >= 100.0))
+    ele_mask_t           = _reduce_t(primele_rows_t    & (spinetpart_df[_stp_ke] >= ELE_KE_TH))
+    proton_mask_t        = _reduce_t(primproton_rows_t & (spinetpart_df[_stp_ke] >= P_KE_TH ))
+    subprimproton_mask_t = _reduce_t(subprimproton_rows_t & (spinetpart_df[_stp_ke] >= P_KE_TH ))
+    muon_mask_t          = _reduce_t(primmuon_rows_t   & (spinetpart_df[_stp_ke] >= MU_KE_TH ))
+    pion_mask_t          = _reduce_t(primpion_rows_t   & (spinetpart_df[_stp_ke] >= PI_KE_TH ))
+    photon_mask_t        = _reduce_t(primphoton_rows_t & (spinetpart_df[_stp_ke] >= GAM_KE_TH))
 
     ele_mask_noKE_t           = _reduce_t(primele_rows_t)
     proton_mask_noKE_t        = _reduce_t(primproton_rows_t)
@@ -315,17 +313,17 @@ def make_nueNp0Pi_df(f):
     fiducial_mask_r = (_ptmp.rec.dlp.is_fiducial == 1).groupby(level=int_levels).first()
     flash_match_r = (_ptmp.rec.dlp.is_flash_matched == 1).groupby(level=int_levels).first()
     containment_r = (_ptmp.rec.dlp.is_contained == 1).groupby(level=int_levels).first()
-    muon_mask_r = (primmuon_rows_r & (_ptmp.rec.dlp.particles.ke >= 25.0)).groupby(level=int_levels).any()
-    pion_mask_r = (primpion_rows_r & (_ptmp.rec.dlp.particles.ke >= 25.0)).groupby(level=int_levels).any()
-    proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.ke >= 40.0)).groupby(level=int_levels).any()
-    subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.ke >= 40.0)).groupby(level=int_levels).any()
-    photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= 100.0)).groupby(level=int_levels).any()
-    ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.ke >= 500.0)).groupby(level=int_levels).any()
-    ele_softmax_r = (primele_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I1'] > 0.9)).groupby(level=int_levels).any()
-    ele_primary_r = (primele_rows_r & (_ptmp.rec.dlp.particles.primary_scores['I1'] > 0.99)).groupby(level=int_levels).any()
-    proton_softmax_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I4'] > 0.75)).groupby(level=int_levels).any()
-    vertex_distance_r = (primele_rows_r & (_ptmp.rec.dlp.particles.vertex_distance < 3.5)).groupby(level=int_levels).any()
-    ele_dedx_r = (primele_rows_r & (_ptmp.rec.dlp.particles.start_dedx < 4.0)).groupby(level=int_levels).any()
+    muon_mask_r = (primmuon_rows_r & (_ptmp.rec.dlp.particles.ke >= MU_KE_TH)).groupby(level=int_levels).any()
+    pion_mask_r = (primpion_rows_r & (_ptmp.rec.dlp.particles.ke >= PI_KE_TH)).groupby(level=int_levels).any()
+    proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
+    subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
+    photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= GAM_KE_TH)).groupby(level=int_levels).any()
+    ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.ke >= ELE_KE_TH)).groupby(level=int_levels).any()
+    ele_softmax_r = (primele_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I1'] >= ELE_SOFTMAX_TH)).groupby(level=int_levels).any()
+    ele_primary_r = (primele_rows_r & (_ptmp.rec.dlp.particles.primary_scores['I1'] >= ELE_PRIMARY_TH)).groupby(level=int_levels).any()
+    proton_softmax_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I4'] >= P_SOFTMAX_TH)).groupby(level=int_levels).any()
+    vertex_distance_r = (primele_rows_r & (_ptmp.rec.dlp.particles.vertex_distance < ELE_VTXDIST_TH)).groupby(level=int_levels).any()
+    ele_dedx_r = (primele_rows_r & (_ptmp.rec.dlp.particles.start_dedx < ELE_DEDX_TH)).groupby(level=int_levels).any()
 
     ele_energy_r = _ptmp.rec.dlp.particles.ke.where(primele_rows_r).groupby(level=int_levels).first()
     ele_dedx_r = _ptmp.rec.dlp.particles.start_dedx.where(primele_rows_r).groupby(level=int_levels).first()
@@ -622,8 +620,8 @@ def make_nueNp0Pi_selected_df(f):
     df = df[df.rec.dlp['proton_mask_reco'] == True]
     df = df[df.rec.dlp['ele_primary_reco'] >= ELE_PRIMARY_TH]
     df = df[df.rec.dlp['ele_softmax_reco'] >= ELE_SOFTMAX_TH]
-    df = df[df.rec.dlp['proton_softmax_reco'] >= PROTON_SOFTMAX_TH]
+    df = df[df.rec.dlp['proton_softmax_reco'] >= P_SOFTMAX_TH]
     df = df[df.rec.dlp['ele_dedx_reco'] < ELE_DEDX_TH]
-    df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VERTEX_DISTANCE_TH]
+    df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VTXDIST_TH]
 
     return df

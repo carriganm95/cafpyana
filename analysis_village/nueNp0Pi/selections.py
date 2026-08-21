@@ -34,10 +34,8 @@ from makedf.constants import *
 # and pulls in the threshold/label settings the functions below are built on.
 from analysis_village.nueNp0Pi.config.settings import (
     DETECTOR, PER_TPC_INCATHODE_CM,
-    NU_SCORE_TH, SAVE_NTRKS, TRACKSCORE_TH, VTXDIST_TH,
-    MU_CHI2MU_TH, MU_CHI2P_TH, MU_LEN_TH, QUAL_TH, P_CHI2P_TH, P_LEN_TH,
-    MU_PLO_TH, MU_PHI_TH, P_PLO_TH, P_PHI_TH,
     ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
+    ELE_KE_TH, P_KE_TH, MU_KE_TH, PI_KE_TH, GAM_KE_TH,
 )
 from pyanalib.chunked_selection import multicol_resolve_column_key
 
