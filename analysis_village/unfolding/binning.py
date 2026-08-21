@@ -19,16 +19,26 @@ and reco axes, as required for a square response matrix) such that:
 
 Strategy
 --------
-Start from an equal-population split of the true-value distribution (N
-quantile bins). Compute the true-vs-reco 2D histogram on those edges and, for
-every bin, the purity (diagonal / reco-marginal) and stability
-(diagonal / true-marginal). Any bin that fails the purity/stability floor is
-merged into whichever neighbor produces the better resulting diagonal -- this
-directly widens under-resolved bins instead of leaving migration hidden.
-Merging necessarily reduces the bin count below the requested N when the
-requested N asks for finer binning than the detector resolution actually
-supports; the final N actually achieved is always reported rather than
-silently forcing the request.
+Start from an equal-population split of the seed distribution (N quantile
+bins). Compute the true-vs-reco 2D histogram on those edges and, for every
+bin, the purity (diagonal / reco-marginal) and stability
+(diagonal / true-marginal). If any bin fails the purity/stability floor, the
+bin count has to shrink -- but rather than only ever merging the one bad bin
+into a neighbor (which permanently freezes every other bin's edges at their
+original, now-stale quantile split), the resolution loop first looks for the
+largest bin count below the current one at which a FRESH equal-population
+redistribution of the whole range clears the floor in every bin. If one
+exists, it's adopted -- the whole binning gets rebalanced, not just the
+region that failed. Only when no fresh redistribution at any bin count down
+to `min_bins` can clear the floor (e.g. a narrow, badly-resolved region that
+would force redistribution to sacrifice granularity everywhere just to fix
+one spot) does the loop fall back to a single targeted merge of just the
+worst bin into whichever neighbor gives the better result, then resumes
+searching for a redistribution at the new, smaller count. Merging and
+redistributing can each necessarily reduce the bin count below the requested
+N when the requested N asks for finer binning than the detector resolution
+supports; the final N actually achieved -- and how much came from each
+mechanism -- is always reported rather than silently forcing the request.
 
 Finally, edges are rounded to `sig_figs` significant figures for readability,
 with a monotonicity fix-up in case rounding collapses two close edges.
@@ -156,27 +166,12 @@ def equal_population_edges(values: np.ndarray, n_bins: int,
     quantiles = np.linspace(0.0, 1.0, n_bins + 1)
     edges = np.quantile(values, quantiles)
     edges = np.unique(edges)
-
     if len(edges) < n_bins + 1:
-        lo = vmin if vmin is not None else float(edges[0])
-        hi = vmax if vmax is not None else float(edges[-1])
-        if hi > lo:
-            import warnings
-            warnings.warn(
-                f"Only {len(edges) - 1} distinct quantile edge(s) from {len(values)} "
-                f"values for n_bins={n_bins} (repeated values / few events); "
-                f"falling back to {n_bins} uniform bins in [{lo}, {hi}].",
-                UserWarning, stacklevel=2,
-            )
-            edges = np.linspace(lo, hi, n_bins + 1)
-        else:
-            raise ValueError(
-                f"Only {len(edges) - 1} distinct bins possible from {len(values)} "
-                f"values for n_bins={n_bins} and no usable vmin/vmax range "
-                f"(all values identical and no range override supplied). "
-                f"Check that the truth column is correctly filled and SIGNAL_MASK_FN "
-                f"is selecting truth-matched events."
-            )
+        raise ValueError(
+            f"Only {len(edges) - 1} distinct bins possible from {len(values)} "
+            f"values for n_bins={n_bins} (too many repeated values / too few "
+            f"events). Reduce n_bins."
+        )
 
     if vmin is not None:
         edges[0] = vmin
@@ -221,7 +216,8 @@ def diagonal_metrics(true_vals: np.ndarray, reco_vals: np.ndarray,
 
 
 # ---------------------------------------------------------------------------
-# 4. Purity-floor merge loop.
+# 4. Purity-floor resolution loop: prefer a fresh redistribution, fall back
+#    to a targeted merge only where redistribution can't clear the floor.
 # ---------------------------------------------------------------------------
 
 def _score(edges, true_vals, reco_vals, weights):
@@ -229,48 +225,97 @@ def _score(edges, true_vals, reco_vals, weights):
     return purity, stability
 
 
-def enforce_purity_floor(edges: np.ndarray, true_vals: np.ndarray,
-                          reco_vals: np.ndarray, threshold: float = 0.6,
-                          weights: np.ndarray | None = None,
-                          min_bins: int = 2) -> tuple[np.ndarray, int]:
-    """Merge bins that fail `min(purity, stability) < threshold` into
-    whichever neighbor gives the better resulting diagonal, until every
-    remaining bin passes or `min_bins` is reached.
+def _passes(edges, true_vals, reco_vals, weights, threshold):
+    p, s = _score(edges, true_vals, reco_vals, weights)
+    return np.minimum(p, s).min() >= threshold
 
-    Returns (final_edges, n_merges).
+
+def _merge_worst_bin_once(edges: np.ndarray, true_vals: np.ndarray,
+                           reco_vals: np.ndarray,
+                           weights: np.ndarray | None) -> np.ndarray:
+    """Merge the single worst-scoring bin into whichever neighbor gives the
+    better resulting diagonal. One step only -- the caller loops."""
+    purity, stability = _score(edges, true_vals, reco_vals, weights)
+    worst_metric = np.minimum(purity, stability)
+    i = int(np.argmin(worst_metric))
+    n_bins = len(edges) - 1
+
+    candidates = []
+    if i > 0:
+        candidates.append(np.delete(edges, i))       # merge bin i into bin i-1
+    if i < n_bins - 1:
+        candidates.append(np.delete(edges, i + 1))   # merge bin i into bin i+1
+    if not candidates:
+        return edges  # single bin left, nothing to merge with
+
+    best_trial, best_floor = None, -np.inf
+    for trial in candidates:
+        p, s = _score(trial, true_vals, reco_vals, weights)
+        floor = np.minimum(p, s).min()
+        if floor > best_floor:
+            best_floor, best_trial = floor, trial
+    return best_trial
+
+
+def enforce_purity_floor(edges: np.ndarray, true_vals: np.ndarray,
+                          reco_vals: np.ndarray, seed_vals: np.ndarray,
+                          threshold: float = 0.6,
+                          weights: np.ndarray | None = None,
+                          min_bins: int = 2,
+                          vmin: float | None = None,
+                          vmax: float | None = None,
+                          prefer_redistribution: bool = True,
+                          ) -> tuple[np.ndarray, int, int, bool]:
+    """Shrink the bin count until every bin clears `min(purity, stability) >=
+    threshold`, preferring a full rebalance over a local merge at each step.
+
+    At each iteration where the current edges have a failing bin: if
+    `prefer_redistribution`, search bin counts from (current - 1) down to
+    `min_bins` for the LARGEST one at which a fresh equal-population split of
+    `seed_vals` (via `equal_population_edges`) clears the floor in every bin;
+    adopt it if found. Only when no such redistribution exists at any bin
+    count in that range does this fall back to `_merge_worst_bin_once`, which
+    only touches the offending bin and its chosen neighbor, leaving everyone
+    else's edges alone. Either way the loop then re-checks and repeats.
+
+    `min_bins` is a hard floor: if it's reached while a bin still fails the
+    threshold (e.g. several spatially-separated bad regions that no single
+    global redistribution can fix at once, combined with a `min_bins` too
+    tight for enough merges), the loop stops anyway rather than going lower --
+    `satisfied=False` in the return signals this rather than silently
+    pretending the floor was cleared.
+
+    Returns (final_edges, n_redistributions, n_merges, satisfied).
     """
     edges = np.array(edges, dtype=float)
+    n_redistributions = 0
     n_merges = 0
+    satisfied = _passes(edges, true_vals, reco_vals, weights, threshold)
 
-    while len(edges) - 1 > min_bins:
-        purity, stability = _score(edges, true_vals, reco_vals, weights)
-        worst_metric = np.minimum(purity, stability)
-        i = int(np.argmin(worst_metric))
-        if worst_metric[i] >= threshold:
-            break  # every bin passes
+    while len(edges) - 1 > min_bins and not satisfied:
+        n_current = len(edges) - 1
+        redistributed = False
+        if prefer_redistribution:
+            for candidate_n in range(n_current - 1, min_bins - 1, -1):
+                candidate_edges = equal_population_edges(
+                    seed_vals, candidate_n, vmin=vmin, vmax=vmax
+                )
+                if _passes(candidate_edges, true_vals, reco_vals, weights, threshold):
+                    edges = candidate_edges
+                    n_redistributions += 1
+                    redistributed = True
+                    satisfied = True
+                    break
 
-        n_bins = len(edges) - 1
-        candidates = []
-        if i > 0:
-            trial = np.delete(edges, i)  # merge bin i into bin i-1
-            candidates.append(trial)
-        if i < n_bins - 1:
-            trial = np.delete(edges, i + 1)  # merge bin i into bin i+1
-            candidates.append(trial)
-        if not candidates:
-            break  # single bin left, nothing to merge with
+        if not redistributed:
+            new_edges = _merge_worst_bin_once(edges, true_vals, reco_vals, weights)
+            if len(new_edges) == len(edges):
+                break  # couldn't merge further (single bin), give up
+            edges = new_edges
+            n_merges += 1
+            satisfied = _passes(edges, true_vals, reco_vals, weights, threshold)
 
-        best_trial, best_floor = None, -np.inf
-        for trial in candidates:
-            p, s = _score(trial, true_vals, reco_vals, weights)
-            floor = np.minimum(p, s).min()
-            if floor > best_floor:
-                best_floor, best_trial = floor, trial
-
-        edges = best_trial
-        n_merges += 1
-
-    return edges, n_merges
+    return edges, n_redistributions, n_merges, satisfied
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +332,9 @@ class BinningResult:
     purity: np.ndarray
     stability: np.ndarray
     counts2d: np.ndarray
-    merges_applied: int
+    redistributions_applied: int      # times the whole binning was rebalanced at a lower N
+    merges_applied: int               # times a single bin was merged into a neighbor as a fallback
+    floor_satisfied: bool             # False if min_bins was hit before every bin cleared the floor
     diagnostics: str = field(repr=False, default="")
 
     def print_table(self):
@@ -313,6 +360,7 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
                     purity_threshold: float = 0.6,
                     stability_threshold: float | None = None,
                     enforce_purity: bool = True,
+                    prefer_redistribution: bool = True,
                     sig_figs: int = 2,
                     vmin: float | None = None,
                     vmax: float | None = None,
@@ -336,49 +384,88 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
         purity/stability (diagonal fraction of the true-vs-reco histogram).
         stability_threshold defaults to purity_threshold if not given.
     enforce_purity : if True (the hybrid strategy), bins failing the floor
-        are merged into a neighbor, so the final bin count can be < n_bins.
+        force the bin count down (via redistribution and/or merging -- see
+        `prefer_redistribution`), so the final bin count can be < n_bins.
         If False, returns the raw equal-population split at exactly n_bins
-        with diagnostics only (no merging) -- use this to see what plain
+        with diagnostics only (no adjustment) -- use this to see what plain
         equal-statistics binning would look like.
+    prefer_redistribution : if True (default), each time the bin count has to
+        shrink to fix a purity/stability violation, first search for the
+        largest bin count at which a FRESH equal-population redistribution of
+        the whole range clears the floor everywhere, and adopt it if found --
+        this rebalances all bins, not just the one that failed. Only when no
+        redistribution at any bin count (down to min_bins) clears the floor
+        does a single targeted merge of the worst bin get applied as a
+        fallback, after which redistribution is tried again at the new,
+        smaller count. Set to False to skip straight to merge-only behavior
+        (each violation merges just that bin into a neighbor, leaving every
+        other bin's edges untouched -- cheaper, but bin counts can end up
+        very uneven since nothing ever rebalances after a merge).
     sig_figs : round final edges to this many significant figures.
     vmin, vmax : pin the outer edges to exact physical bounds instead of the
         sample min/max (e.g. an analysis threshold or a hard 0).
     keep_exact : edge indices left unrounded (default: first and last, since
         those are usually the physical range bounds set by vmin/vmax).
-    min_bins : merging never reduces the bin count below this.
+    min_bins : the bin count never drops below this, from either mechanism.
     weights : optional per-event weights for the 2D histogram.
     """
     if stability_threshold is None:
         stability_threshold = purity_threshold
-    # merge loop uses a single threshold; take the stricter of the two so
-    # both floors are honored (equal in the common case).
+    # the resolution loop uses a single threshold; take the stricter of the
+    # two so both floors are honored (equal in the common case).
     merge_threshold = max(purity_threshold, stability_threshold)
 
     seed_vals = reco_vals if population == "reco" else true_vals
     edges = equal_population_edges(seed_vals, n_bins, vmin=vmin, vmax=vmax)
 
+    n_redistributions = 0
     n_merges = 0
     if enforce_purity:
-        edges, n_merges = enforce_purity_floor(
-            edges, true_vals, reco_vals, threshold=merge_threshold,
-            weights=weights, min_bins=min_bins,
+        edges, n_redistributions, n_merges, _ = enforce_purity_floor(
+            edges, true_vals, reco_vals, seed_vals, threshold=merge_threshold,
+            weights=weights, min_bins=min_bins, vmin=vmin, vmax=vmax,
+            prefer_redistribution=prefer_redistribution,
         )
 
     edges = round_edges_sigfigs(edges, sig_figs=sig_figs, keep_exact=keep_exact)
 
+    # Recompute on the FINAL, rounded edges -- rounding can shift purity/stability
+    # slightly from whatever `enforce_purity_floor` last saw pre-rounding, so this
+    # is the authoritative check, and it's computed the same way whether or not
+    # `enforce_purity` even ran (an unenforced equal-population split might
+    # legitimately already satisfy the floor, or might not -- either way this
+    # reports the truth rather than assuming).
     counts2d, purity, stability, counts_true, counts_reco = diagonal_metrics(
         true_vals, reco_vals, edges, weights=weights
     )
+    floor_satisfied = bool(np.minimum(purity, stability).min() >= merge_threshold)
 
     diagnostics = _diagnostics_table(edges, counts_true, counts_reco, purity, stability)
-    if n_merges:
+    if n_redistributions or n_merges:
+        verb = "applied to satisfy" if floor_satisfied else "applied but did NOT fully clear"
         diagnostics = (
             f"requested n_bins={n_bins}, final n_bins={len(edges) - 1} "
-            f"({n_merges} merge(s) applied to satisfy purity/stability >= "
-            f"{merge_threshold:.2f})\n" + diagnostics
+            f"({n_redistributions} redistribution(s), {n_merges} merge(s) "
+            f"{verb} purity/stability >= {merge_threshold:.2f})\n" + diagnostics
         )
     else:
-        diagnostics = f"n_bins={len(edges) - 1} (no merges needed)\n" + diagnostics
+        diagnostics = f"n_bins={len(edges) - 1} (no adjustment needed)\n" + diagnostics
+    if not floor_satisfied:
+        if enforce_purity:
+            warning = (
+                f"WARNING: min_bins={min_bins} was reached before every bin "
+                f"cleared the purity/stability floor -- see rows below the "
+                f"threshold. Lower min_bins, lower purity_threshold, or accept "
+                f"the remaining migration."
+            )
+        else:
+            warning = (
+                f"WARNING: enforce_purity=False, so no adjustment was attempted "
+                f"-- this plain equal-population split does not clear "
+                f"purity/stability >= {merge_threshold:.2f} in every bin. See "
+                f"rows below the threshold."
+            )
+        diagnostics = warning + "\n" + diagnostics
 
     return BinningResult(
         edges=edges,
@@ -389,6 +476,8 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
         purity=purity,
         stability=stability,
         counts2d=counts2d,
+        redistributions_applied=n_redistributions,
         merges_applied=n_merges,
+        floor_satisfied=floor_satisfied,
         diagnostics=diagnostics,
     )
