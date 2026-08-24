@@ -42,7 +42,7 @@ topology_list = [0, 1, 2, 3, 4, 5,
                 6, 7, 8, 9, 10]
 
 topology_labels = [r'$\nu_e$ CC 1p0$\pi$',
-                    r'$\nu_e$ CC Np0$\pi$',
+                    r'$\nu_e$ CC >1p0$\pi$',
                     r'$\nu_e$ CC OOPS',
                     r'$\nu_e$ CC OOFV',
                     r'$\nu_e$ CC $\pi^{\pm}$',

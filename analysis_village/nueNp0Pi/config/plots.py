@@ -207,6 +207,22 @@ class VariableConfig(_BaseVariableConfig):
         )
 
     @classmethod
+    def proton_momentum_default(cls):
+        return cls(
+            var_save_name="proton-p",
+            var_plot_name="P_p",
+            var_labels=[r"$\mathrm{P_p}$ [MeV/c]", 
+            r"$\mathrm{P_p^{reco.}}$ [MeV/c]", 
+            r"$\mathrm{P_p^{true}}$ [MeV/c]"],
+            bins=np.linspace(0.0, 3.0, 30),
+            var_evt_reco_col=('rec', 'dlp', 'proton_p_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'proton_p_true', '', '', '', ''),
+            var_nu_col=('mc', 'p', 'totp'),
+            xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{MeV}/c)\ \mathrm{Ar}}\right]$",
+            response_matrix=True
+        )
+
+    @classmethod
     def leading_proton_ke(cls):
         return cls(
             var_save_name="leading_proton_ke",
