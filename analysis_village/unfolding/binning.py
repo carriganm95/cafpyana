@@ -553,3 +553,56 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
         floor_satisfied=floor_satisfied,
         diagnostics=diagnostics,
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. Plotting helpers: visualize under/overflow WITHOUT feeding clipped
+#    values into determine_bins/diagonal_metrics (see module docstring's
+#    "Edge-of-range handling" note -- clipping before analysis is exactly the
+#    mistake this section exists to avoid; it belongs only at the very last
+#    step, for matplotlib's benefit, on a throwaway copy of the array).
+# ---------------------------------------------------------------------------
+
+def add_overflow_edges(edges: np.ndarray, low_pad_frac: float = 0.25,
+                        high_pad_frac: float = 0.25) -> np.ndarray:
+    """Extend `edges` with one extra bin below `edges[0]` and one above
+    `edges[-1]`, for VISUALIZING under/overflow only.
+
+    The padding is multiplicative (`edges[0] / (1+low_pad_frac)`,
+    `edges[-1] * (1+high_pad_frac)`), not additive, so the extra edges stay
+    strictly positive and the result is safe to hand straight to a log-scale
+    axis -- appropriate here since a physical quantity like energy is always
+    > 0; this WOULD produce a non-positive edge (and a broken log axis) for a
+    variable whose range can span or approach 0, in which case use additive
+    padding instead.
+
+    Never pass values clipped with `clip_to_plot_edges` (below) into
+    `determine_bins` or `diagonal_metrics` -- those need the true unclipped
+    values to correctly count migration into/out of the signal region (see
+    `diagonal_metrics`'s docstring). This pair of functions is for the plot
+    only.
+    """
+    edges = np.asarray(edges, dtype=float)
+    if edges[0] <= 0:
+        raise ValueError(
+            "add_overflow_edges uses multiplicative padding and requires "
+            f"edges[0] > 0; got {edges[0]}. Use additive padding instead for "
+            "a variable whose range can reach 0 or go negative."
+        )
+    lo_edge = edges[0] / (1.0 + low_pad_frac)
+    hi_edge = edges[-1] * (1.0 + high_pad_frac)
+    return np.concatenate([[lo_edge], edges, [hi_edge]])
+
+
+def clip_to_plot_edges(values: np.ndarray, plot_edges: np.ndarray) -> np.ndarray:
+    """Clip `values` into `[plot_edges[0], plot_edges[-1])` so under/overflow
+    events land in the dedicated outer bins added by `add_overflow_edges`
+    instead of being silently dropped by matplotlib's `hist`/`hist2d` (which
+    omit points outside the given bin range entirely, rather than showing
+    them anywhere). For plotting only -- see `add_overflow_edges`'s docstring.
+    """
+    plot_edges = np.asarray(plot_edges, dtype=float)
+    span = plot_edges[-1] - plot_edges[0]
+    eps = max(span * 1e-9, np.finfo(float).eps)
+    return np.clip(np.asarray(values, dtype=float),
+                    plot_edges[0], plot_edges[-1] - eps)
