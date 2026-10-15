@@ -380,7 +380,7 @@ def make_nueNp0Pi_df(f):
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
     # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
     _pdg_r = abs(_ptmp.rec.dlp.particles.pdg_code)
-    _valid_r = _ptmp.rec.dlp.particles.is_valid
+    _valid_r = _ptmp.rec.dlp.particles.ke >= 25
     photon_count_reco   = ((_pdg_r == 22)   & (_valid_r == 1)).groupby(level=int_levels).sum()
     electron_count_reco = ((_pdg_r == 11)   & (_valid_r == 1)).groupby(level=int_levels).sum()
     muon_count_reco     = ((_pdg_r == 13)   & (_valid_r == 1)).groupby(level=int_levels).sum()
@@ -388,7 +388,7 @@ def make_nueNp0Pi_df(f):
     proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
 
     _pdg_t_abs = abs(spinetpart_df[_stp_pdg])
-    _valid_t   = spinetpart_df[_stp_valid]
+    _valid_t   = spinetpart_df[_std_ke] >= 25
     photon_count_true   = _remap_true_to_reco(((_pdg_t_abs == 22)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
     electron_count_true = _remap_true_to_reco(((_pdg_t_abs == 11)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
     muon_count_true     = _remap_true_to_reco(((_pdg_t_abs == 13)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
@@ -600,7 +600,195 @@ def make_nueNp0Pi_df(f):
 
     slcdf = multicol_merge(slcdf, hdrdf, left_index=True, right_index=True, how="left", validate="many_to_one")
 
-    return truth_match_spine(slcdf, mcdf) 
+    return truth_match_spine(slcdf, mcdf)
+
+
+def make_spine_part_reco_df(f):
+    """Reco-only SPINE particle df for DATA.
+
+    ``make_spine_part_df`` builds its result left-from the reco<->true particle
+    match table, which is empty on data (no truth) -> it returns zero rows. For
+    data we only want the reco particles, so load ``spinepart_branches`` directly.
+    """
+    pfpdf = loadbranches(f["recTree"], spinepart_branches)
+    rename_to_XYZ(pfpdf, ["momentum", "end_point", "start_point", "start_dir", "end_dir", "vertex"])
+    return pfpdf
+
+
+def make_nueNp0Pi_data_df(f):
+    """Reco-only (data) counterpart of :func:`make_nueNp0Pi_df`.
+
+    Produces the same reco ``rec.dlp.*`` columns the event-selection pipeline's
+    cuts consume (see ``selections.py`` -- every applied cut reads ``rec.dlp.*``
+    only), but computes **no truth**: no ``make_mcnudf_nuecc``, no
+    ``rec.dlp_true`` particle branches, no ``bkgd_*``/``true_signal*`` categories,
+    and no ``truth_match_spine``. Header comes from ``make_hdrdf`` (data) rather
+    than ``make_mchdrdf``. Output ``evt`` key schema matches what the pipeline
+    loads for the ``data`` sample (truth operations there are guarded behind
+    ``sample == "data"``). Pair with the ``nuecc_data.py`` df_maker config.
+    """
+    det = loadbranches(f["recTree"], ["rec.hdr.det"]).rec.hdr.det
+    if (1 == det.unique()):
+        DETECTOR = "SBND"
+    else:
+        DETECTOR = "ICARUS"
+
+    assert DETECTOR == "SBND"
+
+    # Reco-only particles (see make_spine_part_reco_df): make_spine_part_df would
+    # return zero rows on data because it builds left-from the empty truth-match table.
+    pfpdf = make_spine_part_reco_df(f)
+    slcdf = make_spine_int_df(f)   # built left-from reco interactions, so data-safe
+    hdrdf = make_hdrdf(f)
+
+    ## add reco candidate particle indices to slcdf while it is still
+    ## interaction-level so multicol_merge aligns cleanly; the subsequent merge
+    ## with pfpdf broadcasts these down to every particle row.
+    nlevel = slcdf.columns.nlevels
+    for pdg, label in [(11, 'primele'), (13, 'primmu'), (211, 'primpi'), (2212, 'primpr'), (22, 'primph')]:
+        idx = get_highest_ke_particle_idx(pfpdf, pdg)
+        idx.index.names = slcdf.index.names
+        col = tuple(['rec', 'dlp', label] + [''] * (nlevel - 3))
+        slcdf = multicol_merge(slcdf, idx.rename(col).to_frame(), left_index=True, right_index=True, how='left')
+
+    # subleading proton
+    idx = get_second_highest_ke_particle_idx(pfpdf, 2212)
+    idx.index.names = slcdf.index.names
+    col = tuple(['rec', 'dlp', 'subprimpr'] + [''] * (nlevel - 3))
+    slcdf = multicol_merge(slcdf, idx.rename(col).to_frame(), left_index=True, right_index=True, how='left')
+
+    # expand to particle level temporarily to compute reco masks / kinematics
+    _ptmp = multicol_merge(slcdf, pfpdf, left_index=True, right_index=True, how="right", validate="one_to_many")
+    int_levels = list(range(_ptmp.index.nlevels - 1))  # all levels except particle
+    particle_idx = pd.Series(_ptmp.index.get_level_values(_ptmp.index.names[-1]), index=_ptmp.index)
+
+    # reco particle row selectors
+    primele_rows_r       = particle_idx == _ptmp.rec.dlp.primele
+    primproton_rows_r    = particle_idx == _ptmp.rec.dlp.primpr
+    subprimproton_rows_r = particle_idx == _ptmp.rec.dlp.subprimpr
+    primmuon_rows_r      = particle_idx == _ptmp.rec.dlp.primmu
+    primpion_rows_r      = particle_idx == _ptmp.rec.dlp.primpi
+    primphoton_rows_r    = particle_idx == _ptmp.rec.dlp.primph
+
+    fiducial_mask_r = (_ptmp.rec.dlp.is_fiducial == 1).groupby(level=int_levels).first()
+    flash_match_r = (_ptmp.rec.dlp.is_flash_matched == 1).groupby(level=int_levels).first()
+    containment_r = (_ptmp.rec.dlp.is_contained == 1).groupby(level=int_levels).first()
+    muon_mask_r = (primmuon_rows_r & (_ptmp.rec.dlp.particles.ke >= MU_KE_TH)).groupby(level=int_levels).any()
+    pion_mask_r = (primpion_rows_r & (_ptmp.rec.dlp.particles.ke >= PI_KE_TH)).groupby(level=int_levels).any()
+    proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
+    subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
+    photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= GAM_KE_TH)).groupby(level=int_levels).any()
+    ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.ke >= ELE_KE_TH)).groupby(level=int_levels).any()
+
+    ele_energy_r = _ptmp.rec.dlp.particles.ke.where(primele_rows_r).groupby(level=int_levels).first()
+    ele_dedx_r = _ptmp.rec.dlp.particles.start_dedx.where(primele_rows_r).groupby(level=int_levels).first()
+    ele_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I1'].where(primele_rows_r).groupby(level=int_levels).first()
+    ele_primary_r = _ptmp.rec.dlp.particles.primary_scores['I1'].where(primele_rows_r).groupby(level=int_levels).first()
+    ele_vertex_distance_r = _ptmp.rec.dlp.particles.vertex_distance.where(primele_rows_r).groupby(level=int_levels).first()
+    muon_energy_r = _ptmp.rec.dlp.particles.ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_r = _ptmp.rec.dlp.particles.ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_r = _ptmp.rec.dlp.particles.ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(primproton_rows_r).groupby(level=int_levels).first()
+    muon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primmuon_rows_r).groupby(level=int_levels).first()
+    pion_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primpion_rows_r).groupby(level=int_levels).first()
+    proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primproton_rows_r).groupby(level=int_levels).first()
+    ele_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primele_rows_r).groupby(level=int_levels).first()
+    photon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    proton_p_r = _ptmp.rec.dlp.particles.p.where(primproton_rows_r).groupby(level=int_levels).first()
+    proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(primproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_r = _ptmp.rec.dlp.particles.ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_csda_r = _ptmp.rec.dlp.particles.csda_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_energy_mcs_r = _ptmp.rec.dlp.particles.mcs_ke.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_p_r = _ptmp.rec.dlp.particles.p.where(subprimproton_rows_r).groupby(level=int_levels).first()
+    subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
+    photon_energy_r = _ptmp.rec.dlp.particles.ke.where(primphoton_rows_r).groupby(level=int_levels).first()
+
+    # Interaction-level particle_counts.* summary is not populated in current SPINE CAF
+    # output; compute reco equivalents from particle-level is_valid + pdg_code.
+    _pdg_r = abs(_ptmp.rec.dlp.particles.pdg_code)
+    _valid_r = _ptmp.rec.dlp.particles.ke >= 25
+    photon_count_reco   = ((_pdg_r == 22)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    electron_count_reco = ((_pdg_r == 11)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    muon_count_reco     = ((_pdg_r == 13)   & (_valid_r == 1)).groupby(level=int_levels).sum()
+    pion_count_reco     = ((_pdg_r == 211)  & (_valid_r == 1)).groupby(level=int_levels).sum()
+    proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
+
+    tki_mc = get_tki_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels)
+    tki_lp_mc = get_tki_spine_lp(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels)
+    lp_open_angle = np.cos(get_lp_open_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, _ptmp.rec.dlp.primpr, int_levels))
+    lepton_beam_angle = np.cos(get_lepton_beam_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primele, int_levels))
+
+    sbnd_fiducial = InFV(slcdf.rec.dlp.vertex, det="SBND_Gen1")
+
+    for label, mask in [
+                        ('fiducial_mask_reco', fiducial_mask_r),
+                        ('sbnd_fiducial_reco', sbnd_fiducial),
+                        ('flash_match_reco', flash_match_r),
+                        ('containment_reco', containment_r),
+                        ('subprimproton_mask_reco', subprimproton_mask_r),
+                        ('muon_mask_reco',     muon_mask_r),
+                        ('pion_mask_reco',     pion_mask_r),
+                        ('photon_mask_reco',   photon_mask_r),
+                        ('ele_mask_reco',      ele_mask_r),
+                        ('proton_mask_reco',   proton_mask_r),
+                        ('ele_energy_reco',      ele_energy_r),
+                        ('ele_dedx_reco',         ele_dedx_r),
+                        ('ele_softmax_reco',     ele_softmax_r),
+                        ('ele_primary_reco',     ele_primary_r),
+                        ('ele_vertex_distance_reco', ele_vertex_distance_r),
+                        ('muon_energy_reco',     muon_energy_r),
+                        ('pion_energy_reco',     pion_energy_r),
+                        ('proton_energy_reco',   proton_energy_r),
+                        ('proton_p_reco',        proton_p_r),
+                        ('proton_softmax_reco',   proton_softmax_r),
+                        ('subprim_proton_energy_reco', subprim_proton_energy_r),
+                        ('subprim_proton_p_reco', subprim_proton_p_r),
+                        ('subprim_proton_softmax_reco', subprim_proton_softmax_r),
+                        ('photon_energy_reco',   photon_energy_r),
+
+                        ('muon_energy_csda_reco', muon_energy_csda_r),
+                        ('pion_energy_csda_reco', pion_energy_csda_r),
+                        ('proton_energy_csda_reco', proton_energy_csda_r),
+                        ('subprim_proton_energy_csda_reco', subprim_proton_energy_csda_r),
+                        ('muon_energy_mcs_reco', muon_energy_mcs_r),
+                        ('pion_energy_mcs_reco', pion_energy_mcs_r),
+                        ('proton_energy_mcs_reco', proton_energy_mcs_r),
+                        ('subprim_proton_energy_mcs_reco', subprim_proton_energy_mcs_r),
+                        ('muon_contained_reco', muon_contained_r),
+                        ('pion_contained_reco', pion_contained_r),
+                        ('proton_contained_reco', proton_contained_r),
+                        ('subprim_proton_contained_reco', subprim_proton_contained_r),
+                        ('ele_contained_reco', ele_contained_r),
+                        ('photon_contained_reco', photon_contained_r),
+
+                        ('del_alpha_lp_reco', tki_lp_mc['del_alpha']),
+                        ('del_phi_lp_reco',   tki_lp_mc['del_phi']),
+                        ('del_Tp_lp_reco',    tki_lp_mc['del_Tp']),
+                        ('del_alpha_reco', tki_mc['del_alpha']),
+                        ('del_phi_reco',   tki_mc['del_phi']),
+                        ('del_Tp_reco',    tki_mc['del_Tp']),
+
+                        ('lp_open_angle_reco', lp_open_angle),
+                        ('lepton_beam_angle_reco', lepton_beam_angle),
+
+                        ('photon_count_reco',   photon_count_reco),
+                        ('electron_count_reco', electron_count_reco),
+                        ('muon_count_reco',     muon_count_reco),
+                        ('pion_count_reco',     pion_count_reco),
+                        ('proton_count_reco',   proton_count_reco),
+                        ]:
+        col = pad_column_name(('rec', 'dlp', label), slcdf)
+        slcdf[col] = mask
+
+    slcdf = multicol_merge(slcdf, hdrdf, left_index=True, right_index=True, how="left", validate="many_to_one")
+
+    return slcdf
 
 
 def make_nueNp0Pi_selected_df(f):

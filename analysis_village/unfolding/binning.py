@@ -43,17 +43,16 @@ mechanism -- is always reported rather than silently forcing the request.
 Finally, edges are rounded to `sig_figs` significant figures for readability,
 with a monotonicity fix-up in case rounding collapses two close edges.
 
-Edge-of-range handling: purity/stability denominators are independent 1D
-histograms of the full `true_vals`/`reco_vals` arrays (see `diagonal_metrics`
-docstring), not derived from the 2D histogram's own margins -- so a
-true-signal event whose reco value migrates entirely outside the measured
-range counts against that true bin's stability instead of silently vanishing
-from the accounting. This module does not itself decide how to handle values
-outside `[vmin, vmax]` in your input arrays (clip them into an overflow edge
-bin, or exclude them from the signal definition upstream and let containment
-loss show up as reduced stability/efficiency) -- that's an analysis choice
-the caller makes before calling `determine_bins`, not something this module
-imposes.
+Edge-of-range handling: stability is defined as the diagonal of the
+row-normalised smearing matrix -- i.e. counts2d[i,i] / counts2d[i,:].sum(),
+where the denominator counts only events with BOTH true in bin i AND reco
+inside `[vmin, vmax]`.  Events whose reco migrates entirely outside the
+measured range contribute to efficiency loss (true_marginal vs row sums of
+counts2d) but do not count against stability; stability therefore measures
+smearing-matrix conditioning and matches what the 2D migration-matrix plot
+shows.  Purity uses an independent 1D reco-marginal histogram (not the 2D
+column sums) so that events whose true value falls outside `edges` still
+count against reco-bin purity.
 
 This module deliberately only takes plain numpy arrays (not dataframes / CAF
 column tuples) so it has no dependency on the rest of the analysis_village
@@ -227,23 +226,22 @@ def diagonal_metrics(true_vals: np.ndarray, reco_vals: np.ndarray,
     purity[i]    = counts2d[i, i] / reco_marginal[i]   (reco-bin-i purity: of
                    events reconstructed into reco bin i, what fraction are
                    truly from bin i)
-    stability[i] = counts2d[i, i] / true_marginal[i]   (true-bin-i stability:
-                   of events truly in bin i, what fraction are reconstructed
-                   back into reco bin i)
+    stability[i] = counts2d[i, i] / counts2d[i, :].sum()   (true-bin-i
+                   stability: of events with true in bin i that reconstructed
+                   into ANY signal bin, what fraction landed in the correct
+                   reco bin i; i.e. the diagonal of the row-normalised
+                   smearing matrix)
 
-    `true_marginal`/`reco_marginal` are each an INDEPENDENT 1D histogram of
-    the full `true_vals`/`reco_vals` array on `edges` -- NOT `counts2d`'s own
-    row/column sums. That distinction matters at the measurement's outer
-    edges: `np.histogram2d` drops an event if EITHER coordinate falls outside
-    `edges`, so a true-signal event in bin i whose reco value migrates
-    entirely outside the measured range (a real containment/efficiency loss,
-    not a bin-to-bin migration) would vanish from `counts2d` -- and if
-    `true_marginal` were taken from `counts2d.sum(axis=1)`, it would vanish
-    from stability's denominator too, silently inflating stability right
-    where edge effects most need to be visible. Using independent 1D
-    histograms means every true-in-bin event counts against stability (and
-    every reco-in-bin event counts against purity) whether or not its paired
-    coordinate landed inside `edges` at all.
+    `true_marginal` (4th return) is an INDEPENDENT 1D histogram of the full
+    `true_vals` array on `edges`, counting all true-bin events regardless of
+    where reco falls.  It is returned for efficiency and cross-section
+    calculations where containment loss is relevant, but is NOT used as the
+    stability denominator.  Stability uses `counts2d.sum(axis=1)` (events
+    with both true and reco inside `edges`) so that it measures smearing
+    matrix conditioning and agrees with what the 2D plot's row sums show.
+    Events whose reco migrates outside `edges` entirely are accounted for as
+    efficiency loss (true_marginal vs counts2d row sums) rather than being
+    charged against stability.
     """
     counts2d, _, _ = np.histogram2d(true_vals, reco_vals, bins=[edges, edges],
                                      weights=weights)
@@ -251,17 +249,161 @@ def diagonal_metrics(true_vals: np.ndarray, reco_vals: np.ndarray,
     true_marginal, _ = np.histogram(true_vals, bins=edges, weights=weights)
     reco_marginal, _ = np.histogram(reco_vals, bins=edges, weights=weights)
 
+    row_sums = counts2d.sum(axis=1)
+
     with np.errstate(divide="ignore", invalid="ignore"):
         purity = np.divide(diag, reco_marginal,
                             out=np.zeros_like(diag), where=reco_marginal != 0)
-        stability = np.divide(diag, true_marginal,
-                               out=np.zeros_like(diag), where=true_marginal != 0)
+        stability = np.divide(diag, row_sums,
+                               out=np.zeros_like(diag), where=row_sums != 0)
 
     return counts2d, purity, stability, true_marginal, reco_marginal
 
 
 # ---------------------------------------------------------------------------
-# 4. Purity-floor resolution loop: prefer a fresh redistribution, fall back
+# 4a. Greedy constraint-based edge finder.
+# ---------------------------------------------------------------------------
+
+def _greedy_constrained_edges(
+    true_vals: np.ndarray,
+    reco_vals: np.ndarray,
+    vmin: float,
+    vmax: float,
+    min_width: float = 0.0,
+    min_events: float = 0.0,
+    stability_fraction: float = 0.0,
+    weights: np.ndarray | None = None,
+    n_bins_max: int | None = None,
+    n_candidates: int = 500,
+    sig_figs: int = 2,
+) -> np.ndarray:
+    """Greedy forward scan producing bin edges that satisfy hard constraints.
+
+    Starting at vmin, each bin grows rightward until all active constraints
+    are met:
+      - width:       hi - lo >= min_width
+      - events:      diagonal weighted count in [lo, hi) >= min_events
+      - stability:   diagonal / true_marginal >= stability_fraction
+
+    Stability = diagonal / true_marginal (fraction of true-bin events reco'd
+    back into this bin). Uses independent 1-D marginals on the full arrays,
+    consistent with `diagonal_metrics`.
+
+    Candidate right edges are taken from quantiles of the in-range true
+    distribution (n_candidates points), so the scan is O(n_bins * n_candidates)
+    array operations rather than O(n_events^2). Uses sorted cumulative weight
+    arrays for O(log n) per candidate lookup.
+
+    Returns edges always spanning [vmin, vmax]. If the final partial bin cannot
+    satisfy all constraints, it is closed at vmax anyway; the caller can detect
+    this from BinningResult.floor_satisfied.
+    """
+    w = (np.ones(len(true_vals)) if weights is None
+         else np.asarray(weights, dtype=float))
+    true_vals = np.asarray(true_vals, dtype=float)
+    reco_vals = np.asarray(reco_vals, dtype=float)
+
+    in_range = (true_vals >= vmin) & (true_vals <= vmax)
+    if not in_range.any():
+        return np.array([vmin, vmax])
+
+    # Fine candidate right-edge positions drawn from the true distribution.
+    q = np.linspace(0.0, 1.0, n_candidates)
+    cands = np.unique(np.concatenate([np.quantile(true_vals[in_range], q), [vmax]]))
+    cands = np.sort(cands[(cands > vmin) & (cands <= vmax)])
+
+    # Mask for events whose reco is inside the signal range [vmin, vmax].
+    # Used as the stability denominator (smearing matrix row sums), so that
+    # events with reco outside the signal region count as efficiency loss
+    # rather than being charged against stability.
+    reco_in_signal = (reco_vals >= vmin) & (reco_vals <= vmax)
+
+    edges: list[float] = [float(vmin)]
+    lo = float(vmin)
+
+    while lo < vmax:
+        if n_bins_max is not None and len(edges) - 1 >= n_bins_max:
+            break
+
+        # Build sorted cumulative-weight arrays for this lo value so each
+        # candidate hi costs only O(log n) via searchsorted.
+
+        # True marginal for stability: events with true in [lo, hi) AND reco
+        # inside the signal region [vmin, vmax].  Matches the smearing matrix
+        # row-sum denominator used by diagonal_metrics.
+        reco_ge = reco_vals >= lo
+        true_ge = true_vals >= lo
+        ts_mask = true_ge & reco_in_signal
+        ts_sub = true_vals[ts_mask]
+        ts_w = w[ts_mask]
+        ts_ord = np.argsort(ts_sub)
+        ts_sorted = ts_sub[ts_ord]
+        ts_cumw = np.concatenate([[0.0], np.cumsum(ts_w[ts_ord])])
+
+        # Diagonal counts: events with BOTH true and reco in [lo, hi).
+        # Key = max(true, reco) — an event is in the diagonal iff its max is < hi.
+        both = true_ge & reco_ge
+        d_max = np.maximum(true_vals[both], reco_vals[both])
+        d_w = w[both]
+        d_ord = np.argsort(d_max)
+        d_sorted = d_max[d_ord]
+        d_cumw = np.concatenate([[0.0], np.cumsum(d_w[d_ord])])
+
+        found_hi: float | None = None
+        seen_hi_r: set[float] = set()
+        for hi in cands:
+            if hi <= lo:
+                continue
+            # Round the candidate as it will appear in the final edge list so
+            # that the constraint check is done on the same value that
+            # diagonal_metrics will see. vmax is kept exact (never rounded).
+            hi_r = hi if hi == vmax else float(round_to_sigfigs(hi, sig_figs))
+            if hi_r in seen_hi_r:
+                continue
+            seen_hi_r.add(hi_r)
+            if hi_r <= lo:
+                continue
+            if hi_r - lo < min_width:
+                continue
+
+            true_marg = ts_cumw[int(np.searchsorted(ts_sorted, hi_r, side="left"))]
+            diag = d_cumw[int(np.searchsorted(d_sorted, hi_r, side="left"))]
+            if diag < min_events:
+                continue
+
+            stability = diag / true_marg if true_marg > 0.0 else 0.0
+            if stability < stability_fraction:
+                continue
+
+            found_hi = hi_r
+            break
+
+        if found_hi is None:
+            break
+
+        edges.append(found_hi)
+        lo = found_hi
+
+    residual_appended = False
+    if edges[-1] != vmax:
+        # If the cap stopped us before reaching vmax, extend the last bin
+        # to cover the remaining range rather than opening a new bin past the cap.
+        if n_bins_max is not None and len(edges) - 1 >= n_bins_max:
+            edges[-1] = float(vmax)
+        else:
+            # No valid edge was found from `lo` — the greedy scan could not
+            # satisfy all constraints before reaching vmax.  The remaining
+            # events are forced into a residual bin that may violate the
+            # stability floor.  Signal this to the caller so it can decide
+            # whether to fall back to a different strategy.
+            edges.append(float(vmax))
+            residual_appended = True
+
+    return np.array(edges), residual_appended
+
+
+# ---------------------------------------------------------------------------
+# 4b. Purity-floor resolution loop: prefer a fresh redistribution, fall back
 #    to a targeted merge only where redistribution can't clear the floor.
 # ---------------------------------------------------------------------------
 
@@ -408,21 +550,21 @@ class BinningResult:
         print(self.diagnostics)
 
 
-def _diagnostics_table(edges, counts_true, counts_reco, purity, stability) -> str:
+def _diagnostics_table(edges, counts_true, counts_reco, counts_diag, purity, stability) -> str:
     lines = [
-        f"{'bin':>4} {'[lo, hi)':>22} {'N_true':>8} {'N_reco':>8} "
+        f"{'bin':>4} {'[lo, hi)':>22} {'N_true':>8} {'N_reco':>8} {'N_diag':>8}"
         f"{'purity':>7} {'stability':>9}"
     ]
     for i in range(len(edges) - 1):
         lo, hi = edges[i], edges[i + 1]
         lines.append(
             f"{i:>4} {f'[{lo:g}, {hi:g})':>22} {counts_true[i]:>8.0f} "
-            f"{counts_reco[i]:>8.0f} {purity[i]:>7.2f} {stability[i]:>9.2f}"
+            f"{counts_reco[i]:>8.0f} {counts_diag[i]:>8.0f} {purity[i]:>7.2f} {stability[i]:>9.2f}"
         )
     return "\n".join(lines)
 
 
-def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
+def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int | None = None,
                     population: str = "reco",
                     purity_threshold: float = 0.6,
                     stability_threshold: float | None = None,
@@ -433,54 +575,194 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
                     vmax: float | None = None,
                     keep_exact: tuple[int, ...] = (0, -1),
                     min_bins: int = 2,
-                    weights: np.ndarray | None = None) -> BinningResult:
-    """Determine `n_bins` shared true/reco bin edges for a cross-section
-    variable from the reco-selected signal sample.
+                    weights: np.ndarray | None = None,
+                    min_width: float | None = None,
+                    min_events: float | None = None,
+                    n_candidates: int = 500,
+                    greedy_fallback: bool = False,
+                    ) -> BinningResult:
+    """Determine shared true/reco bin edges for a cross-section variable.
+
+    Two modes are available, selected automatically based on which parameters
+    are supplied.
+
+    Constraint-based mode (new)
+    ---------------------------
+    Activated when ``min_width`` or ``min_events`` is provided.  A greedy
+    forward scan grows each bin from its left edge until all active constraints
+    are *simultaneously* satisfied:
+
+      - width:       hi - lo >= min_width
+      - events:      diagonal weighted count in [lo, hi) >= min_events
+      - stability:   diagonal / true_marginal >= purity_threshold  (per-bin)
+
+    This replaces the equal-population seed with a geometry/statistics-driven
+    partition, which avoids very narrow bins where detector resolution drives
+    off-diagonal migration.  ``n_bins`` is treated as a soft upper cap on the
+    number of bins; omit it (or pass None) to impose no cap.
+
+    Equal-population mode (original)
+    ---------------------------------
+    Used when neither ``min_width`` nor ``min_events`` is set.  Seeds from
+    ``n_bins`` equal-population quantile bins and then shrinks the bin count
+    via redistribution and/or merging until ``purity_threshold`` is cleared
+    everywhere (if ``enforce_purity=True``).  ``n_bins`` is required in this
+    mode.
 
     Parameters
     ----------
     true_vals, reco_vals : true and reco values for the SAME reco-selected
-        signal events (same length, index-aligned) -- e.g.
-        `true_var_signal_sel_df`, `var_signal_df` as passed to
-        `unfolding.unfolding_inputs.get_smear_matrix`.
-    n_bins : requested/target number of bins.
+        signal events (same length, index-aligned).
+    n_bins : target/maximum number of bins.  Required for equal-population
+        mode; optional (cap) in constraint-based mode.
     population : "reco" (default) or "true" -- which array's quantiles seed
-        the initial equal-population split. "reco" matches what actually
-        limits your measured statistical uncertainty per bin.
+        the equal-population split (equal-population mode only).
     purity_threshold, stability_threshold : minimum acceptable per-bin
-        purity/stability (diagonal fraction of the true-vs-reco histogram).
+        purity/stability (equal-population mode).  In constraint-based mode
+        ``purity_threshold`` serves as the stability floor.
         stability_threshold defaults to purity_threshold if not given.
-    enforce_purity : if True (the hybrid strategy), bins failing the floor
-        force the bin count down (via redistribution and/or merging -- see
-        `prefer_redistribution`), so the final bin count can be < n_bins.
-        If False, returns the raw equal-population split at exactly n_bins
-        with diagnostics only (no adjustment) -- use this to see what plain
-        equal-statistics binning would look like.
-    prefer_redistribution : if True (default), each time the bin count has to
-        shrink to fix a purity/stability violation, first search for the
-        largest bin count at which a FRESH equal-population redistribution of
-        the whole range clears the floor everywhere, and adopt it if found --
-        this rebalances all bins, not just the one that failed. Only when no
-        redistribution at any bin count (down to min_bins) clears the floor
-        does a single targeted merge of the worst bin get applied as a
-        fallback, after which redistribution is tried again at the new,
-        smaller count. Set to False to skip straight to merge-only behavior
-        (each violation merges just that bin into a neighbor, leaving every
-        other bin's edges untouched -- cheaper, but bin counts can end up
-        very uneven since nothing ever rebalances after a merge).
+    enforce_purity : equal-population mode only -- if True, merge/redistribute
+        to clear the purity floor; if False, return the raw equal-population
+        split with diagnostics only.
+    prefer_redistribution : equal-population mode only -- prefer a full
+        rebalance over a local merge at each step (see module docstring).
     sig_figs : round final edges to this many significant figures.
-    vmin, vmax : pin the outer edges to exact physical bounds instead of the
-        sample min/max (e.g. an analysis threshold or a hard 0).
-    keep_exact : edge indices left unrounded (default: first and last, since
-        those are usually the physical range bounds set by vmin/vmax).
-    min_bins : the bin count never drops below this, from either mechanism.
-    weights : optional per-event weights for the 2D histogram.
+    vmin, vmax : pin outer edges to exact physical bounds.
+    keep_exact : edge indices left unrounded (default: first and last).
+    min_bins : equal-population mode only -- bin count floor.
+    weights : optional per-event weights.
+    min_width : constraint-based mode -- minimum allowed bin width.  Setting
+        this (or min_events) activates constraint-based mode.
+    min_events : constraint-based mode -- minimum diagonal weighted event count
+        per bin (events with both true and reco inside the bin).
+    n_candidates : constraint-based mode -- number of quantile points used as
+        candidate right edges in the greedy scan (default 500).
+    greedy_fallback : constraint-based mode only -- if True and the greedy
+        scan leaves a residual last bin that fails the stability floor (because
+        no valid right edge was found before vmax), fall back to equal-
+        population redistribution with progressively fewer bins until stability
+        is cleared.  Stability only is checked (not purity) for consistency
+        with the greedy scan's own constraint.  Default False preserves the
+        original behaviour of keeping the greedy result and emitting a WARNING.
     """
     if stability_threshold is None:
         stability_threshold = purity_threshold
-    # the resolution loop uses a single threshold; take the stricter of the
-    # two so both floors are honored (equal in the common case).
     merge_threshold = max(purity_threshold, stability_threshold)
+
+    constrained_mode = (min_width is not None) or (min_events is not None)
+
+    if constrained_mode:
+        _vmin = float(vmin) if vmin is not None else float(np.nanmin(true_vals))
+        _vmax = float(vmax) if vmax is not None else float(np.nanmax(true_vals))
+        _min_width = float(min_width) if min_width is not None else 0.0
+        _min_events = float(min_events) if min_events is not None else 0.0
+
+        raw_edges, residual_appended = _greedy_constrained_edges(
+            true_vals, reco_vals,
+            vmin=_vmin, vmax=_vmax,
+            min_width=_min_width,
+            min_events=_min_events,
+            stability_fraction=merge_threshold,
+            weights=weights,
+            n_bins_max=n_bins,
+            n_candidates=n_candidates,
+            sig_figs=sig_figs,
+        )
+        edges = round_edges_sigfigs(raw_edges, sig_figs=sig_figs, keep_exact=keep_exact)
+
+        counts2d, purity, stability, _, counts_reco = diagonal_metrics(
+            true_vals, reco_vals, edges, weights=weights
+        )
+        counts_true = counts2d.sum(axis=1)   # smearing matrix row sums = stability denominator
+        floor_satisfied = bool(stability.min() >= merge_threshold)
+        n_bins_out = len(edges) - 1
+        n_redistributions = 0
+
+        if not floor_satisfied and residual_appended and greedy_fallback:
+            # The greedy scan could not find a valid right edge from the final
+            # lo position and was forced to close the last bin at vmax with
+            # whatever events remained (residual bin).  Fall back to equal-
+            # population redistribution, trying progressively fewer bins from
+            # n_bins_out-1 down to min_bins and adopting the first split whose
+            # stability clears the floor everywhere.  Purity is deliberately
+            # not checked here: the greedy scan enforces only stability, and
+            # purity can be structurally low near the low edge of the range
+            # (many background events reco'd into the first bin) regardless of
+            # how bins are divided.
+            seed_vals_fb = true_vals if population == "true" else reco_vals
+            for fallback_n in range(n_bins_out - 1, min_bins - 1, -1):
+                try:
+                    fb_edges = round_edges_sigfigs(
+                        equal_population_edges(seed_vals_fb, fallback_n,
+                                               vmin=_vmin, vmax=_vmax),
+                        sig_figs=sig_figs, keep_exact=keep_exact,
+                    )
+                except ValueError:
+                    continue
+                _, s = _score(fb_edges, true_vals, reco_vals, weights)
+                if s.min() >= merge_threshold:
+                    edges = fb_edges
+                    counts2d, purity, stability, _, counts_reco = diagonal_metrics(
+                        true_vals, reco_vals, edges, weights=weights
+                    )
+                    counts_true = counts2d.sum(axis=1)
+                    floor_satisfied = True
+                    n_redistributions = n_bins_out - fallback_n
+                    n_bins_out = fallback_n
+                    break
+
+        diagnostics = _diagnostics_table(
+            edges, counts_true, counts_reco, counts2d.diagonal(), purity, stability
+        )
+        cap_str = f", cap={n_bins}" if n_bins is not None else ""
+        header = (
+            f"constraint-based greedy scan: n_bins={n_bins_out}{cap_str}, "
+            f"min_width={_min_width:g}, min_events={_min_events:g}, "
+            f"stability>={merge_threshold:.2f}"
+        )
+        if n_redistributions:
+            header += (
+                f" → equal-pop fallback ({n_redistributions} fewer bin(s) "
+                f"than greedy)"
+            )
+        diagnostics = header + "\n" + diagnostics
+        if not floor_satisfied:
+            if residual_appended:
+                warn = (
+                    "WARNING: greedy scan left a residual last bin and the "
+                    "equal-pop fallback also failed to clear the stability "
+                    "threshold down to min_bins. Lower the threshold, widen "
+                    "the range, or reduce min_bins.\n"
+                )
+            else:
+                warn = (
+                    "WARNING: last bin was extended to vmax after hitting the "
+                    "n_bins cap, but its stability is below the threshold. "
+                    "Increase n_bins or lower the threshold.\n"
+                )
+            diagnostics = warn + diagnostics
+
+        return BinningResult(
+            edges=edges,
+            n_bins_requested=n_bins if n_bins is not None else n_bins_out,
+            n_bins_final=n_bins_out,
+            counts_true=counts_true,
+            counts_reco=counts_reco,
+            purity=purity,
+            stability=stability,
+            counts2d=counts2d,
+            redistributions_applied=n_redistributions,
+            merges_applied=0,
+            floor_satisfied=floor_satisfied,
+            diagnostics=diagnostics,
+        )
+
+    # --- Equal-population mode (original) ---
+    if n_bins is None:
+        raise ValueError(
+            "n_bins is required in equal-population mode. Either pass n_bins "
+            "or activate constraint-based mode by setting min_width or min_events."
+        )
 
     seed_vals = reco_vals if population == "reco" else true_vals
     edges = equal_population_edges(seed_vals, n_bins, vmin=vmin, vmax=vmax)
@@ -495,24 +777,15 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
             sig_figs=sig_figs, keep_exact=keep_exact,
         )
 
-    # A no-op re-round when `enforce_purity` took the edges through
-    # `enforce_purity_floor` (every candidate there is already rounded); the
-    # one case this still does real work is `enforce_purity=False`, where
-    # `edges` is still the raw, unrounded equal-population split.
     edges = round_edges_sigfigs(edges, sig_figs=sig_figs, keep_exact=keep_exact)
 
-    # Recompute on the FINAL, rounded edges -- rounding can shift purity/stability
-    # slightly from whatever `enforce_purity_floor` last saw pre-rounding, so this
-    # is the authoritative check, and it's computed the same way whether or not
-    # `enforce_purity` even ran (an unenforced equal-population split might
-    # legitimately already satisfy the floor, or might not -- either way this
-    # reports the truth rather than assuming).
-    counts2d, purity, stability, counts_true, counts_reco = diagonal_metrics(
+    counts2d, purity, stability, _, counts_reco = diagonal_metrics(
         true_vals, reco_vals, edges, weights=weights
     )
+    counts_true = counts2d.sum(axis=1)   # smearing matrix row sums = stability denominator
     floor_satisfied = bool(np.minimum(purity, stability).min() >= merge_threshold)
 
-    diagnostics = _diagnostics_table(edges, counts_true, counts_reco, purity, stability)
+    diagnostics = _diagnostics_table(edges, counts_true, counts_reco, counts2d.diagonal(), purity, stability)
     if n_redistributions or n_merges:
         verb = "applied to satisfy" if floor_satisfied else "applied but did NOT fully clear"
         diagnostics = (
@@ -564,17 +837,18 @@ def determine_bins(true_vals: np.ndarray, reco_vals: np.ndarray, n_bins: int,
 # ---------------------------------------------------------------------------
 
 def add_overflow_edges(edges: np.ndarray, low_pad_frac: float = 0.25,
-                        high_pad_frac: float = 0.25) -> np.ndarray:
+                        high_pad_frac: float = 0.25,
+                        mode: str = 'multiplicative') -> np.ndarray:
     """Extend `edges` with one extra bin below `edges[0]` and one above
     `edges[-1]`, for VISUALIZING under/overflow only.
 
-    The padding is multiplicative (`edges[0] / (1+low_pad_frac)`,
-    `edges[-1] * (1+high_pad_frac)`), not additive, so the extra edges stay
-    strictly positive and the result is safe to hand straight to a log-scale
-    axis -- appropriate here since a physical quantity like energy is always
-    > 0; this WOULD produce a non-positive edge (and a broken log axis) for a
-    variable whose range can span or approach 0, in which case use additive
-    padding instead.
+    mode='multiplicative' (default): padding is a fraction of the edge value
+    itself -- stays strictly positive and is safe for log-scale axes.  Raises
+    if ``edges[0] <= 0``.
+
+    mode='additive': padding is a fraction of the total range
+    ``edges[-1] - edges[0]`` -- safe for variables that reach 0 or go negative
+    (TKI variables, angles, cosines, etc.).
 
     Never pass values clipped with `clip_to_plot_edges` (below) into
     `determine_bins` or `diagonal_metrics` -- those need the true unclipped
@@ -583,14 +857,21 @@ def add_overflow_edges(edges: np.ndarray, low_pad_frac: float = 0.25,
     only.
     """
     edges = np.asarray(edges, dtype=float)
-    if edges[0] <= 0:
-        raise ValueError(
-            "add_overflow_edges uses multiplicative padding and requires "
-            f"edges[0] > 0; got {edges[0]}. Use additive padding instead for "
-            "a variable whose range can reach 0 or go negative."
-        )
-    lo_edge = edges[0] / (1.0 + low_pad_frac)
-    hi_edge = edges[-1] * (1.0 + high_pad_frac)
+    if mode == 'multiplicative':
+        if edges[0] <= 0:
+            raise ValueError(
+                "add_overflow_edges uses multiplicative padding and requires "
+                f"edges[0] > 0; got {edges[0]}. Use additive padding instead for "
+                "a variable whose range can reach 0 or go negative."
+            )
+        lo_edge = edges[0] / (1.0 + low_pad_frac)
+        hi_edge = edges[-1] * (1.0 + high_pad_frac)
+    elif mode == 'additive':
+        span = edges[-1] - edges[0]
+        lo_edge = edges[0] - low_pad_frac * span
+        hi_edge = edges[-1] + high_pad_frac * span
+    else:
+        raise ValueError(f"mode must be 'multiplicative' or 'additive', got {mode!r}")
     return np.concatenate([[lo_edge], edges, [hi_edge]])
 
 

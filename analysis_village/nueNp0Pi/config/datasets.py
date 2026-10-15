@@ -84,7 +84,7 @@ FLUX_FILE = os.environ.get(
 SPRING_GEN1_ROOT = Path(
     os.environ.get(
         "NUMUCC_SPRING_GEN1_ROOT",
-        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_test/",
+        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_v3/",
         # "/Users/micarrig/Desktop/SBND/data/",
     )
 )
