@@ -37,7 +37,7 @@ echo "If you want to activate this virtual evn again, do $ source '$VENV_NAME'/b
 cd ..
 ######################################################
 
-export PYTHONPATH=$PYTHONPATH:$PWD/..
+export PYTHONPATH=$PWD:$PYTHONPATH:$PWD/..
 export CAFPYANA_WD=`pwd`
 echo $CAFPYANA_WD
 echo "BEARER_TOKEN_FILE is set to: $BEARER_TOKEN_FILE"

@@ -30,8 +30,10 @@ Typical usage::
 from __future__ import annotations
 
 import json
+import math
 import multiprocessing as mp
 import os
+import pickle
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from functools import partial
@@ -65,6 +67,40 @@ class BatchJob:
 
 
 @dataclass
+class BatchStatus:
+    """Completeness-check verdict for one manifest ``BatchJob`` vs. its output pickle."""
+
+    job: BatchJob
+    out_path: Path
+    status: str  # "ok" | "missing" | "corrupt"
+    reason: Optional[str] = None
+    n_evt: Optional[int] = None
+    chunk_pot: Optional[float] = None
+
+
+@dataclass
+class BatchCompletionReport:
+    """Result of :meth:`EventSelectionPipeline.check_batches` -- manifest.json's expected
+    jobs cross-checked against what actually landed in ``batches_dir``.
+    """
+
+    ok: List[BatchStatus] = field(default_factory=list)
+    missing: List[BatchStatus] = field(default_factory=list)
+    corrupt: List[BatchStatus] = field(default_factory=list)
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.missing and not self.corrupt
+
+    @property
+    def needs_resubmit(self) -> List[BatchJob]:
+        """``BatchJob``s to rerun -- same shape manifest.json's ``jobs`` list is built
+        from, so this can be fed straight back into a grid resubmission.
+        """
+        return [st.job for st in self.missing] + [st.job for st in self.corrupt]
+
+
+@dataclass
 class EventSelectionPipelineConfig:
     work_base: Path | str | None = None
     batches_dir: Path | str | None = None
@@ -84,7 +120,11 @@ class EventSelectionPipelineConfig:
     syst_disk_env_var: str = "SYST_DISK_ROOT"
     syst_tag: str = ""
     samples: Sequence[str] = ("mc",)
-    max_files_per_sample: int | None = None
+    # Either a single int/None applied to every sample, or a per-sample mapping
+    # (e.g. {"mc": 5}) -- a sample absent from the mapping is left unlimited. Lets a
+    # notebook smoke-test one sample (fewer MC files, for speed) while processing all
+    # files of another (e.g. the full data sample, which is cheap/fast to read).
+    max_files_per_sample: int | Dict[str, Optional[int]] | None = None
     trace: bool = False
     # >1 -> run batch jobs in a multiprocessing.Pool (maxtasksperchild=1, so
     # each job still gets a fresh worker process torn down after -- same
@@ -93,6 +133,14 @@ class EventSelectionPipelineConfig:
     # Default 1 (sequential, in the calling process) has the smallest memory
     # footprint; raise it if you have RAM to spare for real parallelism.
     n_workers: int = 1
+    # Before aggregating, cross-check every BatchJob in manifest.json against the actual
+    # pickles in batches_dir (see check_batches()) and abort if any are missing or corrupt.
+    # True (safe default) catches grid-submitted map jobs that never landed, were truncated,
+    # or came from a stale/mismatched run -- failure modes the in-process map path's own
+    # per-job try/except (_process_one_job_safe) can't see, since those only cover jobs this
+    # same process launched. Set False to aggregate whatever landed anyway (e.g. a quick look
+    # at partial data while the rest of a grid submission is still running).
+    require_complete_batches: bool = True
 
 
 @dataclass
@@ -175,8 +223,12 @@ class EventSelectionPipeline:
             print(f"[event_selection] {sample}: looking in {where}", flush=True)
             paths = list(self.hooks.iter_df_paths(sample))
             print(f"[event_selection] {sample}: found {len(paths)} file(s)", flush=True)
-            if cfg.max_files_per_sample is not None:
-                paths = paths[: max(0, int(cfg.max_files_per_sample))]
+            if isinstance(cfg.max_files_per_sample, dict):
+                limit = cfg.max_files_per_sample.get(sample)
+            else:
+                limit = cfg.max_files_per_sample
+            if limit is not None:
+                paths = paths[: max(0, int(limit))]
             for p in paths:
                 try:
                     size = os.path.getsize(p)
@@ -397,6 +449,119 @@ class EventSelectionPipeline:
         return batches_dir, batch_paths, failed, manifest_path
 
     # ------------------------------------------------------------------
+    # Batch completeness check -- manifest.json (written by discover_jobs/write_manifest)
+    # is the "database" of what every BatchJob was supposed to produce; this cross-checks
+    # it against what's actually sitting in batches_dir. Needed once the map phase can run
+    # outside this process (grid jobs) -- _process_one_job_safe's try/except only catches
+    # failures in jobs THIS process launched, not a grid job that got preempted, never
+    # started, or wrote a truncated pickle.
+    # ------------------------------------------------------------------
+    def check_batches(
+        self,
+        jobs: Optional[Sequence[BatchJob]] = None,
+        batches_dir: Path | str | None = None,
+        *,
+        quiet: bool = False,
+    ) -> BatchCompletionReport:
+        """Verify one output pickle exists (and looks intact) per expected ``BatchJob``.
+
+        ``jobs`` defaults to every job listed in ``manifest.json`` under this config's
+        ``work_base`` (i.e. whatever ``discover_jobs()``/``run_map()`` last wrote there --
+        the same job list a grid submission would have been built from). A job's pickle is
+        "corrupt" (as opposed to simply "missing") if it exists but: fails to unpickle,
+        is missing the ``meta`` block ``run_batch_selection`` always writes, its recorded
+        ``sample`` doesn't match the job's, its recorded input file list doesn't match the
+        job's (stale output from an earlier/different run), or its ``n_evt``/``chunk_pot``
+        are absent or non-finite.
+        """
+        work, default_batches, _ = self.resolve_paths()
+        batches_dir = Path(batches_dir or default_batches)
+
+        if jobs is None:
+            manifest_path = work / "manifest.json"
+            if not manifest_path.is_file():
+                raise FileNotFoundError(
+                    f"no manifest.json at {manifest_path} -- run discover_jobs()/run_map() "
+                    "first (it writes the job list this check reads), or pass jobs= explicitly"
+                )
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            jobs = [
+                BatchJob(sample=j["sample"], job_id=j["job_id"], files=j["files"], total_bytes=j["total_bytes"])
+                for j in manifest["jobs"]
+            ]
+
+        ok: List[BatchStatus] = []
+        missing: List[BatchStatus] = []
+        corrupt: List[BatchStatus] = []
+
+        for job in jobs:
+            out_pkl = self._batch_out_path(batches_dir, job.sample, job)
+            if not out_pkl.is_file():
+                missing.append(BatchStatus(job=job, out_path=out_pkl, status="missing", reason="file not found"))
+                continue
+            try:
+                with open(out_pkl, "rb") as f:
+                    d = pickle.load(f)
+            except Exception as exc:  # noqa: BLE001 -- any unpickle failure means "corrupt"
+                corrupt.append(BatchStatus(
+                    job=job, out_path=out_pkl, status="corrupt",
+                    reason=f"unpickle failed: {type(exc).__name__}: {exc}",
+                ))
+                continue
+
+            reason = None
+            meta: Dict[str, Any] = {}
+            if not isinstance(d, dict) or "meta" not in d:
+                reason = "pickle missing 'meta' key (not written by run_batch_selection?)"
+            elif d.get("sample") != job.sample:
+                reason = f"sample mismatch (pickle={d.get('sample')!r}, expected={job.sample!r})"
+            else:
+                meta = d["meta"]
+                got_files = sorted(meta.get("df_files") or [])
+                want_files = sorted(job.files)
+                if got_files != want_files:
+                    reason = (
+                        f"input file list mismatch ({len(got_files)} file(s) in pickle vs. "
+                        f"{len(want_files)} in manifest job) -- stale output from a different run?"
+                    )
+                elif meta.get("n_evt") is None or meta.get("chunk_pot") is None:
+                    reason = "meta missing n_evt/chunk_pot"
+                elif not math.isfinite(meta["chunk_pot"]) or meta["chunk_pot"] < 0:
+                    reason = f"chunk_pot is not a sane value ({meta.get('chunk_pot')!r})"
+
+            if reason is not None:
+                corrupt.append(BatchStatus(job=job, out_path=out_pkl, status="corrupt", reason=reason))
+            else:
+                ok.append(BatchStatus(
+                    job=job, out_path=out_pkl, status="ok",
+                    n_evt=meta.get("n_evt"), chunk_pot=meta.get("chunk_pot"),
+                ))
+
+        report = BatchCompletionReport(ok=ok, missing=missing, corrupt=corrupt)
+        if not quiet:
+            self._print_batch_report(report)
+        return report
+
+    @staticmethod
+    def _print_batch_report(report: BatchCompletionReport) -> None:
+        print(
+            f"[event_selection] batch completeness: {len(report.ok)} ok, "
+            f"{len(report.missing)} missing, {len(report.corrupt)} corrupt",
+            flush=True,
+        )
+        for st in report.missing:
+            print(
+                f"  MISSING  {st.job.sample}/{st.job.tag}  ({len(st.job.files)} file(s)) -> {st.out_path}",
+                flush=True,
+            )
+        for st in report.corrupt:
+            print(
+                f"  CORRUPT  {st.job.sample}/{st.job.tag}  -> {st.out_path}  ({st.reason})",
+                flush=True,
+            )
+
+    # ------------------------------------------------------------------
     # Aggregate/render phase
     # ------------------------------------------------------------------
     def run_aggregate(self, batches_dir: Path | str | None = None) -> EventSelectionPipelineResult:
@@ -407,6 +572,24 @@ class EventSelectionPipeline:
         work, default_batches, plots_dir = self.resolve_paths()
         batches_dir = Path(batches_dir or default_batches)
         plots_dir.mkdir(parents=True, exist_ok=True)
+
+        if cfg.require_complete_batches:
+            try:
+                report = self.check_batches(batches_dir=batches_dir)
+            except FileNotFoundError as exc:
+                # No manifest.json to check against (e.g. aggregating a hand-picked
+                # batches_dir that never went through discover_jobs()) -- nothing to
+                # validate completeness against, so proceed rather than block a caller
+                # who never opted into manifest-tracked provenance in the first place.
+                print(f"[event_selection] WARN: skipping batch completeness check ({exc})", flush=True)
+                report = None
+            if report is not None and not report.is_complete:
+                raise RuntimeError(
+                    f"{len(report.missing)} missing / {len(report.corrupt)} corrupt batch "
+                    f"job(s) under {batches_dir} -- see the report printed above for which "
+                    "sample/tag to resubmit. Pass require_complete_batches=False on "
+                    "EventSelectionPipelineConfig to aggregate whatever landed anyway."
+                )
 
         syst_root = self._resolve_syst_disk_root()
         syst_disk_arg = str(syst_root) if syst_root is not None and syst_root.is_dir() else None

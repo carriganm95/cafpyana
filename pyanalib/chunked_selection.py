@@ -312,7 +312,24 @@ class OverlayHistData:
         if len(df) == 0:
             return
 
-        var, weights = get_clipped_evts(df, var_col, self.bins)
+        if sample == "mc":
+            var, weights = get_clipped_evts(df, var_col, self.bins)
+        else:
+            # Some variables (e.g. reco-vs-truth resolution/difference columns) are only
+            # ever computed for MC, since they need truth info that doesn't exist for
+            # non-MC samples (data/intime/offbeam/dirt). Skip just this one fill rather
+            # than letting a missing column take down the whole chunk job -- confirmed
+            # against real data: a single such variable among many EFFICIENCY_VARS
+            # otherwise aborted (and silently dropped, since the map phase catches and
+            # logs per-job exceptions) an entire sample's batch, including every OTHER
+            # plot that sample's chunk would have filled.
+            try:
+                var, weights = get_clipped_evts(df, var_col, self.bins)
+            except KeyError:
+                logger.debug(
+                    "sample=%s: column %r not found, skipping this plot's fill", sample, var_col
+                )
+                return
         weights = np.asarray(weights, dtype=float)
 
         if sample == "mc":

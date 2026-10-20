@@ -73,7 +73,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('mc', 'e', 'genE'),
             xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -108,7 +108,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_energy_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_energy_res', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -127,7 +127,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_energy_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_energy_diff', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{dE_e}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{GeV}\ \mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -147,7 +147,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('mc', 'p', 'totp'),
             xsec_label=r"$\frac{d\sigma}{dP_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -183,7 +183,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('mc', 'p', 'totp'),
             xsec_label=r"$\frac{d\sigma}{dE_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -202,7 +202,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'proton_p_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'proton_p_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{dP_p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -221,7 +221,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'proton_p_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'proton_p_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{dP_p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -240,7 +240,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('p', 'pfp', 'trk', 'truth', 'p', 'dir', 'z'),
             var_nu_col=('mc', 'p', 'dir', 'z'),
             xsec_label=r"$\frac{d\sigma}{dcos(\theta_p)}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -260,7 +260,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'pion_energy_true', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{dP_\pi}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -280,7 +280,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_Tp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -299,7 +299,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_Tp_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_Tp_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -318,7 +318,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_Tp_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_Tp_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{diff}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -337,7 +337,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'del_alpha_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_alpha_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -356,7 +356,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_alpha_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_alpha_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -375,7 +375,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_alpha_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_alpha_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -395,7 +395,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_phi_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
             response_matrix=True,   
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -414,7 +414,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_phi_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_phi_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -433,7 +433,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_phi_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_phi_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -452,7 +452,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'del_Tp_lp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -471,7 +471,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_Tp_lp_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_Tp_lp_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -490,7 +490,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_Tp_lp_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_Tp_lp_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta p_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -510,7 +510,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_alpha_lp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -529,7 +529,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_alpha_lp_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_alpha_lp_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -548,7 +548,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_alpha_lp_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_alpha_lp_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \alpha_T^{\mathrm{l-p,diff}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -568,7 +568,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'del_phi_lp_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg} \ \mathrm{Ar}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology"    
@@ -587,7 +587,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_phi_lp_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_phi_lp_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{l-p,res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",  
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -606,7 +606,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'del_phi_lp_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'del_phi_lp_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\delta \phi_T^{\mathrm{l-p,diff}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",  
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -626,7 +626,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'lp_open_angle_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{\\e p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -645,7 +645,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'lp_open_angle_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'lp_open_angle_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{e,p}^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -664,7 +664,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'lp_open_angle_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'lp_open_angle_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{e,p}^{\mathrm{diff}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -684,7 +684,7 @@ class VariableConfig(_BaseVariableConfig):
             var_nu_col=('rec', 'dlp_true', 'lepton_beam_angle_true', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{\\e, beam}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{deg}}\right]$",
             response_matrix=True,
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -703,7 +703,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'lepton_beam_angle_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'lepton_beam_angle_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{e,\mathrm{beam}}^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -722,7 +722,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'lepton_beam_angle_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'lepton_beam_angle_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\theta_{e,\mathrm{beam}}^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -741,7 +741,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_softmax_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_softmax_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Softmax Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -761,7 +761,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_primary_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_primary_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Primary Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -780,7 +780,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'proton_softmax_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'proton_softmax_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Proton Softmax Score}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -799,7 +799,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_dedx_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_dedx_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron dE/dx}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -818,7 +818,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Vertex Distance}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -837,7 +837,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'subprim_proton_p_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'subprim_proton_p_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary Proton p}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -857,7 +857,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'subprim_proton_p_res', '', '', ''),
             var_nu_col=('rec', 'dlp', 'subprim_proton_p_res', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary\ Proton}\ p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -876,7 +876,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp', 'subprim_proton_p_diff', '', '', ''),
             var_nu_col=('rec', 'dlp', 'subprim_proton_p_diff', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Secondary\ Proton}\ p^{\mathrm{res}}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -895,7 +895,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'photon_count_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'photon_count_true', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Photons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -914,7 +914,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'electron_count_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'electron_count_true', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Electrons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -933,7 +933,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'muon_count_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'muon_count_true', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Muons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -952,7 +952,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'pion_count_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'pion_count_true', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Pions}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -971,7 +971,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'proton_count_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'proton_count_true', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Protons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -991,7 +991,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'num_protons_res', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'num_protons_res', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Protons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -1010,7 +1010,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('rec', 'dlp_true', 'num_protons_diff', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'num_protons_diff', '', '', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Number\ of\ Protons}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -1033,7 +1033,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('mc', 'E', '', '', '', '', ''),
             var_nu_col=('mc', 'E', ''),
             xsec_label=r"$\frac{d\sigma}{dE_{\nu}}$ $\left(\frac{\mathrm{cm}^2}{\mathrm{GeV}}\right)$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -1054,7 +1054,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('mc', 'position', 'x', '', ''),
             var_nu_col=('mc', 'position', 'x'),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Vertex X}}$ $\left(\frac{\mathrm{cm}^2}{\mathrm{cm}}\right)$",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -1073,7 +1073,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('mc', 'position', 'y', '', ''),
             var_nu_col=('mc', 'position', 'y'),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Vertex X}}$ ($\mathrm{cm}^2$ / cm)",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",
@@ -1092,7 +1092,7 @@ class VariableConfig(_BaseVariableConfig):
             var_evt_truth_col=('mc', 'position', 'z', '', ''),
             var_nu_col=('mc', 'position', 'z'),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Vertex X}}$ ($\mathrm{cm}^2$ / cm)",
-            ratio_mode="signal_bkgd", # other options data_mc, reco_true
+            ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",

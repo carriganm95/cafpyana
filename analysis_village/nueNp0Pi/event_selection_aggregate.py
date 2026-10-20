@@ -59,7 +59,7 @@ import warnings
 warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-sys.path.append(path.dirname(path.dirname(path.dirname(path.dirname(path.abspath(__file__))))))
+sys.path.insert(0, path.dirname(path.dirname(path.dirname(path.abspath(__file__)))))
 
 from analysis_village.nueNp0Pi.config.stages import build_pipeline, EFFICIENCY_VARS, sel_evt
 # Imported as a module (not `from ... import EVT_BREAKDOWN_DIR_NAME`) so that reading
@@ -134,6 +134,18 @@ def parse_args():
         help="Skip summary/efficiency/cutflow-table/breakdown-table (unchanged across "
              "EVT_BREAKDOWN_TYPE reruns of the same batch pickles) -- see "
              "aggregate_and_render's render_breakdown_independent.",
+    )
+    p.add_argument(
+        "--work_base", default=None,
+        help="Work dir where manifest.json lives (same as -work_base in "
+             "run_event_selection_map.py). When given, check_batches() runs before "
+             "aggregating to verify every expected batch pickle is present and intact. "
+             "Aborts with exit code 1 if any are missing or corrupt (pass "
+             "--skip_completeness_check to override).",
+    )
+    p.add_argument(
+        "--skip_completeness_check", action="store_true", default=False,
+        help="Skip the pre-aggregate batch completeness check even if --work_base is given.",
     )
     return p.parse_args()
 
@@ -1227,6 +1239,26 @@ def aggregate_and_render(
 
 def main():
     args = parse_args()
+
+    if args.work_base and not args.skip_completeness_check:
+        from analysis_village.nueNp0Pi.event_selection import build_event_selection_pipeline
+        from pyanalib.event_selection_pipeline import EventSelectionPipelineConfig
+        chk_pipeline = build_event_selection_pipeline(
+            EventSelectionPipelineConfig(work_base=args.work_base)
+        )
+        try:
+            report = chk_pipeline.check_batches(batches_dir=args.in_dir)
+            if not report.is_complete:
+                n_bad = len(report.needs_resubmit)
+                print(
+                    f"[aggregate] {n_bad} incomplete job(s) -- resubmit or pass "
+                    f"--skip_completeness_check to aggregate anyway",
+                    flush=True,
+                )
+                sys.exit(1)
+        except FileNotFoundError as exc:
+            print(f"[aggregate] WARN: completeness check skipped ({exc})", flush=True)
+
     try:
         aggregate_and_render(
             args.in_dir,

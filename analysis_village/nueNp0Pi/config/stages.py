@@ -236,6 +236,19 @@ EFFICIENCY_VARS = with_final_selected_evt_variables(
 # usable here either, until it's filled in). Set EVT_BREAKDOWN_VARS = [] to
 # turn these plots off entirely.
 #
+# ``EVT_BREAKDOWN_TYPE`` also accepts a list/tuple of breakdown types (e.g.
+# ``["topology", "genie"]``) to fill ALL of them in the SAME map-phase pass -- every
+# chunk of input data only has to be read once, regardless of how many breakdown types
+# you want plots for. Each (stage, variable, breakdown_type) combination becomes its own
+# PlotSpec (``ChunkRunner`` keys histdata by stage+breakdown_type+var, so they can't
+# collide), and when more than one type is requested each gets its own output filename
+# (``selection_<var>_<breakdown_type>.png`` instead of the single-type default
+# ``selection_<var>.png``) so they don't overwrite each other -- no need to also juggle
+# ``EVT_BREAKDOWN_DIR_NAME`` between runs just to compare breakdown types anymore. The
+# old re-run-with-a-different-string pattern (set EVT_BREAKDOWN_TYPE, call run_full()
+# again) still works but reprocesses every input file from scratch each time; passing a
+# list does it all in one map phase instead.
+#
 # Defaults to EFFICIENCY_VARS minus four entries that don't work through this
 # particular fill path, confirmed against real data (verify_evt_breakdown_vars()
 # below re-checks this any time it's run):
@@ -266,7 +279,7 @@ EVT_BREAKDOWN_VARS: List[Any] = [
     vc for vc in EFFICIENCY_VARS
     if not is_integrated_var_config(vc) and vc.var_save_name not in _EVT_BREAKDOWN_STALE_RECO_COL_VARS
 ]
-EVT_BREAKDOWN_TYPE: str = "topology"
+EVT_BREAKDOWN_TYPE: str | Sequence[str] = ["topology", "genie"]
 EVT_BREAKDOWN_STAGE_KEYS: Optional[Sequence[str]] = None  # None -> final stage only
 # Subdirectory (under the plots dir) these plots render to -- None -> "selection", matching
 # the pre-existing default. Set this alongside EVT_BREAKDOWN_TYPE (e.g. to "selection_genie")
@@ -522,11 +535,22 @@ def build_pipeline() -> List[Stage]:
     # EVT_BREAKDOWN_* module attributes above).
     # ------------------------------------------------------------------
     if EVT_BREAKDOWN_VARS:
-        if EVT_BREAKDOWN_TYPE not in BREAKDOWN_REGISTRY:
-            raise ValueError(
-                "EVT_BREAKDOWN_TYPE=%r is not a key in BREAKDOWN_REGISTRY (have: %s)"
-                % (EVT_BREAKDOWN_TYPE, sorted(BREAKDOWN_REGISTRY))
-            )
+        # Accept either a single breakdown_type string (the common case) or a
+        # list/tuple of them -- fills every one of them in this SAME map-phase pass
+        # (one read of each input chunk), instead of needing a full separate run (and
+        # full re-read of every input file) per breakdown_type. See the module comment
+        # above EVT_BREAKDOWN_TYPE.
+        breakdown_types = (
+            (EVT_BREAKDOWN_TYPE,) if isinstance(EVT_BREAKDOWN_TYPE, str) else tuple(EVT_BREAKDOWN_TYPE)
+        )
+        if not breakdown_types:
+            raise ValueError("EVT_BREAKDOWN_TYPE is empty -- set it to a breakdown_type string or list of them")
+        for bt in breakdown_types:
+            if bt not in BREAKDOWN_REGISTRY:
+                raise ValueError(
+                    "EVT_BREAKDOWN_TYPE=%r is not a key in BREAKDOWN_REGISTRY (have: %s)"
+                    % (bt, sorted(BREAKDOWN_REGISTRY))
+                )
         stage_by_key = {s.key: s for s in stages}
         stage_keys = (
             EVT_BREAKDOWN_STAGE_KEYS if EVT_BREAKDOWN_STAGE_KEYS is not None else (stages[-1].key,)
@@ -537,8 +561,15 @@ def build_pipeline() -> List[Stage]:
                     "EVT_BREAKDOWN_STAGE_KEYS: unknown stage key %r (have: %s)"
                     % (key, list(stage_by_key))
                 )
-            for var_config in EVT_BREAKDOWN_VARS:
-                stage_by_key[key].plots.append(evt_breakdown_plot(var_config, EVT_BREAKDOWN_TYPE))
+            for bt in breakdown_types:
+                # Only suffix filenames with the breakdown_type when there's more than
+                # one -- keeps the common single-type case's output filenames unchanged
+                # (selection_<var>.png, not selection_<var>_topology.png).
+                name_suffix = bt if len(breakdown_types) > 1 else ""
+                for var_config in EVT_BREAKDOWN_VARS:
+                    stage_by_key[key].plots.append(
+                        evt_breakdown_plot(var_config, bt, name_suffix=name_suffix)
+                    )
 
     # ------------------------------------------------------------------
     # N-1 plots (notebook-configurable -- see the N_MINUS_1_* module attributes above).

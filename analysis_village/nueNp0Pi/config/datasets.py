@@ -83,16 +83,22 @@ FLUX_FILE = os.environ.get(
 # -----------------------------------------------------------------------------
 SPRING_GEN1_ROOT = Path(
     os.environ.get(
-        "NUMUCC_SPRING_GEN1_ROOT",
+        "SPRING_GEN1_ROOT",
         "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_v3/",
-        # "/Users/micarrig/Desktop/SBND/data/",
     )
 )
 
 SPRING_GEN1_ROOT_EAF = Path(
     os.environ.get(
-        "NUMUCC_SPRING_GEN1_ROOT",
+        "SPRING_GEN1_ROOT_EAF",
         "/scratch/7DayLifetime/micarrig/xsec",
+    )
+)
+
+DATA_GEN1_ROOT = Path(
+    os.environ.get(
+        "DATA_GEN1_ROOT",
+        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_data_v1/",
     )
 )
 
@@ -118,7 +124,7 @@ EVENT_SELECTION_GLOBS: Dict[str, str] = {
     # absolute right-hand side -- so overriding NUMUCC_SPRING_GEN1_ROOT had no effect
     # on this glob. Made relative so it actually composes with SPRING_GEN1_ROOT.
     "mc": str(SPRING_GEN1_ROOT / "*.df"),
-    # "data": str(SPRING_GEN1_ROOT / "2026_05_16_230859__sel_all-data-1e20/*.df"),
+    "data": str(DATA_GEN1_ROOT / "*.df"),
     # "intime": str(SPRING_GEN1_ROOT / "2026_05_11_040132__sel_all-mc-Intime/*.df"),
     # "offbeam": str(SPRING_GEN1_ROOT / "2026_05_11_035756__sel_all-data-OffBeamLight/*.df"),
     # "dirt": str(SPRING_GEN1_ROOT / "2026_05_11_040638__sel_all-mc-dirt/*.df"),
@@ -139,7 +145,7 @@ SELECTED_EVENTS_TAG = os.environ.get("NUMUCC_SELECTED_EVENTS_TAG", "sel_mup")
 
 SELECTED_EVENTS_GLOBS: Dict[str, str] = {
     "mc": str(SPRING_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-mc-BNB_cosmics/*.df"),
-    "data": str(SPRING_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-data-Gen1/*.df"),
+    "data": str(DATA_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-data-Gen1/*.df"),
     "intime": str(SPRING_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-mc-Intime/*.df"),
     "offbeam": str(SPRING_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-data-OffBeamLight/*.df"),
     "dirt": str(SPRING_GEN1_ROOT / f"*__{SELECTED_EVENTS_TAG}-mc-dirt/*.df"),
