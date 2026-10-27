@@ -53,18 +53,17 @@ topology_labels = [r'$\nu_e$ CC 1p0$\pi$',
                     r'NC',
                     r'Other']
 
-topology_colors = ['#00082E',
-                    '#001261',
-                    '#033E7D',
-                    '#1E6F9D',
-                    '#71A8C4',
-                    '#C9DDE7',
-                    '#EACEBD',
-                    '#D39774',
-                    '#BE6533',
-                    '#8B2706',
-                    '#590008',
-                    '#000000']
+topology_colors = ['#332288',  # νe CC 1p0π
+                    '#117733',  # νe CC >1p0π
+                    '#44AA99',  # νe CC OOPS
+                    '#88CCEE',  # νe CC OOFV
+                    '#DDCC77',  # νe CC π±
+                    '#CC6677',  # νe CC μ±
+                    '#AA4499',  # νe CC γ
+                    '#882255',  # νe CC Other
+                    '#6699CC',  # νμ CC
+                    '#999933',  # NC
+                    '#888888']  # Other
 
 # --- GENIE interaction mode breakdown ---
 genie_mode_list = [0, # CCQE
@@ -85,12 +84,13 @@ genie_mode_labels = [ r'$\nu_e$ CC QE',
                         "Cosmic"]
 
 
-# genie_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B", "#BFB17C",
-genie_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B",
-                     "darkgreen",
-                     "crimson",
-                    #  "sienna",
-                     "gray"]
+genie_mode_colors = ['#228833',  # QE
+                     '#EE6677',  # RES
+                     '#4477AA',  # DIS
+                     '#CCBB44',  # MEC
+                     '#AA3377',  # CC Other
+                     '#66CCEE',  # NC
+                     '#BBBBBB']  # Cosmic
 
 # --- GENIE SB interaction mode breakdown ---
 genie_sb_mode_labels = [r'$\nu_{\mu}$ CC QE', r'$\nu_{\mu}$ CC QE',
@@ -101,20 +101,27 @@ genie_sb_mode_labels = [r'$\nu_{\mu}$ CC QE', r'$\nu_{\mu}$ CC QE',
                      r"Other $\nu$",
                      "Cosmic"]
 
-genie_sb_mode_colors = ["#9b5580", "#9b5580",
-                        "#390C1E", "#390C1E",
-                        "#2c7c94", "#2c7c94",
-                        "#D88A3B", "#D88A3B",
-                        "darkgreen",
-                        "crimson",
-                        "gray"]
+genie_sb_mode_colors = ['#228833', '#228833',  # QE pair
+                        '#CCBB44', '#CCBB44',  # MEC pair
+                        '#EE6677', '#EE6677',  # RES pair
+                        '#AA3377', '#AA3377',  # Other pair
+                        '#66CCEE',             # NC
+                        '#999933',             # Other ν
+                        '#BBBBBB']             # Cosmic
 
 
 # --- GiBUU interaction mode breakdown ---
 gibuu_mode_labels = [r'$\nu_{\mu}$ CC QE', r'$\nu_{\mu}$ CC QE (2p2h)', r'$\nu_{\mu}$ CC RES', r'$\nu_{\mu}$ CC DIS', r'$\nu_{\mu}$ CC Other',
                      r"$\nu$ NC", r"FV other $\nu$", r"Out-FV $\nu$", "Cosmic"]
-gibuu_mode_colors = ["#9b5580", "#390C1E", "#2c7c94", "#D88A3B", "#BFB17C",
-                     "darkgreen", "crimson", "sienna","gray"]
+gibuu_mode_colors = ['#228833',  # QE
+                     '#44AA99',  # QE (2p2h)
+                     '#EE6677',  # RES
+                     '#4477AA',  # DIS
+                     '#AA3377',  # CC Other
+                     '#66CCEE',  # NC
+                     '#CCBB44',  # FV other ν
+                     '#999933',  # Out-FV ν
+                     '#BBBBBB']  # Cosmic
 
 
 # nueNp0Pi PID/kinematic selection cuts (config/stages.py's build_pipeline() reco-cut
@@ -133,3 +140,6 @@ P_KE_TH         = 40    # proton_kinetic_energy(): proton_ke_reco > this (MeV)
 MU_KE_TH        = 25   # muon_kinetic_energy(): muon_ke_reco > this (MeV)
 PI_KE_TH        = 25    # pion_kinetic_energy(): pion_ke_reco > this (MeV)
 GAM_KE_TH       = 25    # gamma_kinetic_energy(): gamma_ke_reco > this (MeV)
+# pi0 sideband (makedf/make_nueccdf.py: _apply_pi0_sideband_cuts)
+PI0_LEAD_GAM_KE_TH = 175  # leading photon KE > this (MeV)
+PI0_SUB_GAM_KE_TH  = 25   # subleading photon KE > this (MeV)

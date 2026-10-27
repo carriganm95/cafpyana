@@ -5,7 +5,8 @@ from pyanalib.variable_calculator import get_tki_spine, get_tki_spine_lp, get_lp
 from analysis_village.nueNp0Pi.config.settings import (
     DETECTOR, PER_TPC_INCATHODE_CM,
     ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
-    ELE_KE_TH, P_KE_TH, MU_KE_TH, PI_KE_TH, GAM_KE_TH
+    ELE_KE_TH, P_KE_TH, MU_KE_TH, PI_KE_TH, GAM_KE_TH,
+    PI0_LEAD_GAM_KE_TH, PI0_SUB_GAM_KE_TH,
 )
 
 ## == For additional column in mcdf with primary particle multiplicities
@@ -217,6 +218,7 @@ def make_nueNp0Pi_df(f):
     _prim_pr_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 2212)
     _prim_ph_idx    = _get_highest_ke_true_primary_idx(spinetpart_df, 22)
     _subprim_pr_idx = _get_second_highest_ke_true_primary_idx(spinetpart_df, 2212)
+    _subprim_ph_idx = _get_second_highest_ke_true_primary_idx(spinetpart_df, 22)
 
     for idx, label in [(_prim_ele_idx, 'true_primele'), (_prim_mu_idx, 'true_primmu'),
                        (_prim_pi_idx, 'true_primpi'),   (_prim_pr_idx, 'true_primpr'),
@@ -233,9 +235,20 @@ def make_nueNp0Pi_df(f):
     idx_df = idx.rename(col).to_frame()
     slcdf = multicol_merge(slcdf, idx_df, left_index=True, right_index=True, how='left')
 
+    # get subleading photon (pi0 sideband)
+    idx = get_second_highest_ke_particle_idx(pfpdf, 22)
+    idx.index.names = slcdf.index.names
+    col = tuple(['rec', 'dlp', 'subprimph'] + [''] * (nlevel - 3))
+    slcdf = multicol_merge(slcdf, idx.rename(col).to_frame(), left_index=True, right_index=True, how='left')
+
     mapped = _remap_true_to_reco(_subprim_pr_idx, slcdf)
     mapped.index.names = slcdf.index.names
     col = tuple(['rec', 'dlp_true', 'true_subprimpr'] + [''] * (nlevel - 3))
+    slcdf = multicol_merge(slcdf, mapped.rename(col).to_frame(), left_index=True, right_index=True, how='left')
+
+    mapped = _remap_true_to_reco(_subprim_ph_idx, slcdf)
+    mapped.index.names = slcdf.index.names
+    col = tuple(['rec', 'dlp_true', 'true_subprimph'] + [''] * (nlevel - 3))
     slcdf = multicol_merge(slcdf, mapped.rename(col).to_frame(), left_index=True, right_index=True, how='left')
 
     # expand to particle level temporarily to compute truth category masks
@@ -252,6 +265,7 @@ def make_nueNp0Pi_df(f):
     primmuon_rows_r      = particle_idx == _ptmp.rec.dlp.primmu
     primpion_rows_r      = particle_idx == _ptmp.rec.dlp.primpi
     primphoton_rows_r    = particle_idx == _ptmp.rec.dlp.primph
+    subprimphoton_rows_r = particle_idx == _ptmp.rec.dlp.subprimph
 
     # truth particle row selectors — operate directly in spinetpart_df (all true particles,
     # not just those matched to a reco particle)
@@ -270,6 +284,7 @@ def make_nueNp0Pi_df(f):
     primmuon_rows_t      = _particle_idx_t == _bc(_prim_mu_idx)
     primpion_rows_t      = _particle_idx_t == _bc(_prim_pi_idx)
     primphoton_rows_t    = _particle_idx_t == _bc(_prim_ph_idx)
+    subprimphoton_rows_t    = _particle_idx_t == _bc(_subprim_ph_idx)
 
     # interaction-level truth properties from the reco↔true interaction match already in slcdf.
     # .fillna(False).astype(bool) guards against float64 dtype (introduced when slcdf has reco
@@ -318,6 +333,7 @@ def make_nueNp0Pi_df(f):
     proton_mask_r = (primproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
     subprimproton_mask_r = (subprimproton_rows_r & (_ptmp.rec.dlp.particles.ke >= P_KE_TH)).groupby(level=int_levels).any()
     photon_mask_r = (primphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= GAM_KE_TH)).groupby(level=int_levels).any()
+    subprim_photon_mask_r = (subprimphoton_rows_r & (_ptmp.rec.dlp.particles.ke >= GAM_KE_TH)).groupby(level=int_levels).any()
     ele_mask_r = (primele_rows_r & (_ptmp.rec.dlp.particles.ke >= ELE_KE_TH)).groupby(level=int_levels).any()
     ele_softmax_r = (primele_rows_r & (_ptmp.rec.dlp.particles.pid_scores['I1'] >= ELE_SOFTMAX_TH)).groupby(level=int_levels).any()
     ele_primary_r = (primele_rows_r & (_ptmp.rec.dlp.particles.primary_scores['I1'] >= ELE_PRIMARY_TH)).groupby(level=int_levels).any()
@@ -344,6 +360,7 @@ def make_nueNp0Pi_df(f):
     proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primproton_rows_r).groupby(level=int_levels).first()
     ele_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primele_rows_r).groupby(level=int_levels).first()
     photon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_contained_r = _ptmp.rec.dlp.particles.is_contained.where(subprimphoton_rows_r).groupby(level=int_levels).first()
     subprim_proton_contained_r = _ptmp.rec.dlp.particles.is_contained.where(subprimproton_rows_r).groupby(level=int_levels).first()
     proton_p_r = _ptmp.rec.dlp.particles.p.where(primproton_rows_r).groupby(level=int_levels).first()
     proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(primproton_rows_r).groupby(level=int_levels).first()
@@ -353,6 +370,17 @@ def make_nueNp0Pi_df(f):
     subprim_proton_p_r = _ptmp.rec.dlp.particles.p.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
     photon_energy_r = _ptmp.rec.dlp.particles.ke.where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_energy_r = _ptmp.rec.dlp.particles.ke.where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_softmax_r                  = _ptmp.rec.dlp.particles.pid_scores['I0'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_softmax_r          = _ptmp.rec.dlp.particles.pid_scores['I0'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_electron_softmax_r         = _ptmp.rec.dlp.particles.pid_scores['I1'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_electron_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I1'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_primary_r                  = _ptmp.rec.dlp.particles.primary_scores['I1'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_primary_r          = _ptmp.rec.dlp.particles.primary_scores['I1'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_secondary_r                = _ptmp.rec.dlp.particles.primary_scores['I0'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_secondary_r        = _ptmp.rec.dlp.particles.primary_scores['I0'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    _gg_angle_r  = get_lp_open_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primph, _ptmp.rec.dlp.subprimph, int_levels)
+    pi0_mass_reco = np.sqrt(np.maximum(2 * photon_energy_r * subprim_photon_energy_r * (1 - np.cos(_gg_angle_r)), 0))
 
     ele_energy_t         = _first_t(spinetpart_df[_stp_ke].where(primele_rows_t))
     muon_energy_t        = _first_t(spinetpart_df[_stp_ke].where(primmuon_rows_t))
@@ -376,6 +404,9 @@ def make_nueNp0Pi_df(f):
     proton_contained_t   = _first_t(spinetpart_df[_stp_contained].where(primproton_rows_t))
     ele_contained_t      = _first_t(spinetpart_df[_stp_contained].where(primele_rows_t))
     photon_contained_t   = _first_t(spinetpart_df[_stp_contained].where(primphoton_rows_t))
+    subprim_photon_energy_t = _first_t(spinetpart_df[_stp_ke].where(subprimphoton_rows_t))
+    _gg_angle_true_pre = get_lp_open_angle_spine(spinetpart_df.rec.dlp_true.particles, _bc(_prim_ph_idx), _bc(_subprim_ph_idx), _true_int_levels)
+    pi0_mass_true = np.sqrt(np.maximum(2 * photon_energy_t * subprim_photon_energy_t * (1 - np.cos(_remap_true_to_reco(_gg_angle_true_pre, slcdf))), 0))
 
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF output;
     # compute equivalents here from particle-level is_valid + pdg_code (same semantics SPINE intends)
@@ -388,7 +419,7 @@ def make_nueNp0Pi_df(f):
     proton_count_reco   = ((_pdg_r == 2212) & (_valid_r == 1)).groupby(level=int_levels).sum()
 
     _pdg_t_abs = abs(spinetpart_df[_stp_pdg])
-    _valid_t   = spinetpart_df[_std_ke] >= 25
+    _valid_t   = spinetpart_df[_stp_ke] >= 25
     photon_count_true   = _remap_true_to_reco(((_pdg_t_abs == 22)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
     electron_count_true = _remap_true_to_reco(((_pdg_t_abs == 11)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
     muon_count_true     = _remap_true_to_reco(((_pdg_t_abs == 13)   & (_valid_t == 1)).groupby(level=_true_int_levels).sum(), slcdf).fillna(0)
@@ -485,7 +516,9 @@ def make_nueNp0Pi_df(f):
                         ('proton_p_true',        proton_p_t),
                         ('subprim_proton_energy_true', subprim_proton_energy_t),
                         ('subprim_proton_p_true', subprim_proton_p_t),
-                        ('photon_energy_true',   photon_energy_t),
+                        ('photon_energy_true',         photon_energy_t),
+                        ('subprim_photon_energy_true', subprim_photon_energy_t),
+                        ('pi0_mass_true',              pi0_mass_true),
 
                         ('muon_energy_csda_true', muon_energy_csda_t),
                         ('pion_energy_csda_true', pion_energy_csda_t),
@@ -556,7 +589,17 @@ def make_nueNp0Pi_df(f):
                         ('subprim_proton_energy_reco', subprim_proton_energy_r),
                         ('subprim_proton_p_reco', subprim_proton_p_r),
                         ('subprim_proton_softmax_reco', subprim_proton_softmax_r),
-                        ('photon_energy_reco',   photon_energy_r),
+                        ('photon_energy_reco',                     photon_energy_r),
+                        ('subprim_photon_energy_reco',             subprim_photon_energy_r),
+                        ('photon_softmax_reco',                    photon_softmax_r),
+                        ('subprim_photon_softmax_reco',            subprim_photon_softmax_r),
+                        ('photon_electron_softmax_reco',           photon_electron_softmax_r),
+                        ('subprim_photon_electron_softmax_reco',   subprim_photon_electron_softmax_r),
+                        ('photon_primary_reco',                    photon_primary_r),
+                        ('subprim_photon_primary_reco',            subprim_photon_primary_r),
+                        ('photon_secondary_reco',                  photon_secondary_r),
+                        ('subprim_photon_secondary_reco',          subprim_photon_secondary_r),
+                        ('pi0_mass_reco',                          pi0_mass_reco),
 
                         ('muon_energy_csda_reco', muon_energy_csda_r),
                         ('pion_energy_csda_reco', pion_energy_csda_r),
@@ -657,6 +700,12 @@ def make_nueNp0Pi_data_df(f):
     col = tuple(['rec', 'dlp', 'subprimpr'] + [''] * (nlevel - 3))
     slcdf = multicol_merge(slcdf, idx.rename(col).to_frame(), left_index=True, right_index=True, how='left')
 
+    # subleading photon (pi0 sideband)
+    idx = get_second_highest_ke_particle_idx(pfpdf, 22)
+    idx.index.names = slcdf.index.names
+    col = tuple(['rec', 'dlp', 'subprimph'] + [''] * (nlevel - 3))
+    slcdf = multicol_merge(slcdf, idx.rename(col).to_frame(), left_index=True, right_index=True, how='left')
+
     # expand to particle level temporarily to compute reco masks / kinematics
     _ptmp = multicol_merge(slcdf, pfpdf, left_index=True, right_index=True, how="right", validate="one_to_many")
     int_levels = list(range(_ptmp.index.nlevels - 1))  # all levels except particle
@@ -669,6 +718,7 @@ def make_nueNp0Pi_data_df(f):
     primmuon_rows_r      = particle_idx == _ptmp.rec.dlp.primmu
     primpion_rows_r      = particle_idx == _ptmp.rec.dlp.primpi
     primphoton_rows_r    = particle_idx == _ptmp.rec.dlp.primph
+    subprimphoton_rows_r = particle_idx == _ptmp.rec.dlp.subprimph
 
     fiducial_mask_r = (_ptmp.rec.dlp.is_fiducial == 1).groupby(level=int_levels).first()
     flash_match_r = (_ptmp.rec.dlp.is_flash_matched == 1).groupby(level=int_levels).first()
@@ -708,6 +758,17 @@ def make_nueNp0Pi_data_df(f):
     subprim_proton_p_r = _ptmp.rec.dlp.particles.p.where(subprimproton_rows_r).groupby(level=int_levels).first()
     subprim_proton_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I4'].where(subprimproton_rows_r).groupby(level=int_levels).first()
     photon_energy_r = _ptmp.rec.dlp.particles.ke.where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_energy_r = _ptmp.rec.dlp.particles.ke.where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_softmax_r                  = _ptmp.rec.dlp.particles.pid_scores['I0'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_softmax_r          = _ptmp.rec.dlp.particles.pid_scores['I0'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_electron_softmax_r         = _ptmp.rec.dlp.particles.pid_scores['I1'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_electron_softmax_r = _ptmp.rec.dlp.particles.pid_scores['I1'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_primary_r                  = _ptmp.rec.dlp.particles.primary_scores['I1'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_primary_r          = _ptmp.rec.dlp.particles.primary_scores['I1'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    photon_secondary_r                = _ptmp.rec.dlp.particles.primary_scores['I0'].where(primphoton_rows_r).groupby(level=int_levels).first()
+    subprim_photon_secondary_r        = _ptmp.rec.dlp.particles.primary_scores['I0'].where(subprimphoton_rows_r).groupby(level=int_levels).first()
+    _gg_angle_r  = get_lp_open_angle_spine(_ptmp.rec.dlp.particles, _ptmp.rec.dlp.primph, _ptmp.rec.dlp.subprimph, int_levels)
+    pi0_mass_reco = np.sqrt(np.maximum(2 * photon_energy_r * subprim_photon_energy_r * (1 - np.cos(_gg_angle_r)), 0))
 
     # Interaction-level particle_counts.* summary is not populated in current SPINE CAF
     # output; compute reco equivalents from particle-level is_valid + pdg_code.
@@ -750,7 +811,17 @@ def make_nueNp0Pi_data_df(f):
                         ('subprim_proton_energy_reco', subprim_proton_energy_r),
                         ('subprim_proton_p_reco', subprim_proton_p_r),
                         ('subprim_proton_softmax_reco', subprim_proton_softmax_r),
-                        ('photon_energy_reco',   photon_energy_r),
+                        ('photon_energy_reco',                     photon_energy_r),
+                        ('subprim_photon_energy_reco',             subprim_photon_energy_r),
+                        ('photon_softmax_reco',                    photon_softmax_r),
+                        ('subprim_photon_softmax_reco',            subprim_photon_softmax_r),
+                        ('photon_electron_softmax_reco',           photon_electron_softmax_r),
+                        ('subprim_photon_electron_softmax_reco',   subprim_photon_electron_softmax_r),
+                        ('photon_primary_reco',                    photon_primary_r),
+                        ('subprim_photon_primary_reco',            subprim_photon_primary_r),
+                        ('photon_secondary_reco',                  photon_secondary_r),
+                        ('subprim_photon_secondary_reco',          subprim_photon_secondary_r),
+                        ('pi0_mass_reco',                          pi0_mass_reco),
 
                         ('muon_energy_csda_reco', muon_energy_csda_r),
                         ('pion_energy_csda_reco', pion_energy_csda_r),
@@ -813,3 +884,39 @@ def make_nueNp0Pi_selected_df(f):
     df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VTXDIST_TH]
 
     return df
+
+
+def _apply_pi0_sideband_cuts(df):
+    """pi0 sideband: the nueNp0Pi selection (see make_nueNp0Pi_selected_df) with the
+    photon veto and the electron dE/dx cut removed, plus at least two primary reco
+    photons -- leading KE > PI0_LEAD_GAM_KE_TH, subleading KE > PI0_SUB_GAM_KE_TH (MeV)."""
+    # pre-selection cuts
+    df = df[(df.rec.dlp['is_fiducial'] == 1) & (df.rec.dlp['sbnd_fiducial_reco'] == 1)]
+    df = df[df.rec.dlp['is_flash_matched'] == 1]
+    df = df[df.rec.dlp['is_contained'] == 1]
+
+    # selection cuts (no photon veto, no electron dE/dx cut)
+    df = df[df.rec.dlp['muon_mask_reco'] == False]
+    df = df[df.rec.dlp['pion_mask_reco'] == False]
+    df = df[df.rec.dlp['ele_mask_reco'] == True]
+    df = df[df.rec.dlp['proton_mask_reco'] == True]
+    df = df[df.rec.dlp['ele_primary_reco'] >= ELE_PRIMARY_TH]
+    df = df[df.rec.dlp['ele_softmax_reco'] >= ELE_SOFTMAX_TH]
+    df = df[df.rec.dlp['proton_softmax_reco'] >= P_SOFTMAX_TH]
+    df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VTXDIST_TH]
+
+    # pi0 requirement: two photons
+    df = df[df.rec.dlp['photon_energy_reco'] > PI0_LEAD_GAM_KE_TH]
+    df = df[df.rec.dlp['subprim_photon_energy_reco'] > PI0_SUB_GAM_KE_TH]
+
+    return df
+
+
+def make_nueNp0Pi_pi0_sideband_df(f):
+    """MC pi0 sideband (truth categories kept). See _apply_pi0_sideband_cuts."""
+    return _apply_pi0_sideband_cuts(make_nueNp0Pi_df(f))
+
+
+def make_nueNp0Pi_pi0_sideband_data_df(f):
+    """Data (reco-only) pi0 sideband. See _apply_pi0_sideband_cuts."""
+    return _apply_pi0_sideband_cuts(make_nueNp0Pi_data_df(f))
