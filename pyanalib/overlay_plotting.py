@@ -407,6 +407,8 @@ def overlay_hists_from_histdata(
     show_genie_label: bool = True,
     dpi: int = 300,
     fig_ext: str = ".png",
+    show_data: Optional[bool] = None,
+    xlim: Optional[Tuple[float, float]] = None,
 ):
     """Render an overlay histogram plot from precomputed histograms.
 
@@ -465,9 +467,17 @@ def overlay_hists_from_histdata(
     """
 
     breakdown_type = histdata.breakdown_type
+    # show_data=None -> hide data for truth-based variables (no data counterpart).
+    if show_data is None:
+        show_data = not getattr(var_config, "uses_truth", False)
+    has_data = bool(histdata.has_data and show_data)
     bins = np.asarray(histdata.bins)
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
     n_bins = len(bins) - 1
+    # ``xlim``: draw only this x-range (e.g. to hide an overflow bin that is still kept in
+    # the histogram data). The y-range is then set from the visible bins only.
+    x_lo, x_hi = (bins[0], bins[-1]) if xlim is None else (float(xlim[0]), float(xlim[1]))
+    vis = (bin_centers >= x_lo) & (bin_centers <= x_hi)
 
     # ---- choose breakdown labels & colors (cosmic-first order to match cuts)
     if breakdown_type not in breakdown_display:
@@ -543,7 +553,7 @@ def overlay_hists_from_histdata(
         total_dirt = None
 
     # ---- Data
-    if histdata.has_data:
+    if has_data:
         total_data = histdata.data_hist.astype(float)
         sum_data = np.sum(total_data)
         # compute asymmetric stat errors from data counts
@@ -569,12 +579,20 @@ def overlay_hists_from_histdata(
 
     # ---- Density: area-normalize MC to data
     density_factor = 1.0
-    if plot_mc_stack and histdata.has_data and density:
+    if plot_mc_stack and has_data and density:
         mc_area = np.sum(total_mc)
         data_area = np.sum(total_data)
         density_factor = (data_area / mc_area) if mc_area > 0 else 1.0
         weights_categ = [np.asarray(w) * density_factor for w in weights_categ]
         total_mc = total_mc * density_factor
+        if mc_stat_err is not None:
+            mc_stat_err = mc_stat_err * density_factor  # keep the MC stat band in step
+        if data_ratio is not None and density_factor > 0:
+            # ratio was computed against the unscaled MC above
+            valid = data_ratio != -999.
+            data_ratio = np.where(valid, data_ratio / density_factor, data_ratio)
+            data_ratio_eylow = data_ratio_eylow / density_factor
+            data_ratio_eyhigh = data_ratio_eyhigh / density_factor
 
     if plot_mc_stack and histdata.has_mc and total_mc is not None:
         # each_mc_hist_data is in histdata.mc_hist's native order, i.e. get_cuts_fn's
@@ -613,13 +631,13 @@ def overlay_hists_from_histdata(
 
     if verbose_hist and var_categ is not None:
         layer_totals = [float(np.sum(np.asarray(w, dtype=float))) for w in weights_categ]
-        dtot = float(np.sum(histdata.data_hist)) if histdata.has_data else 0.0
+        dtot = float(np.sum(histdata.data_hist)) if has_data else 0.0
         print(
             f"[overlay_histdata] var={histdata.var_save_name!r} breakdown={breakdown_type!r} "
             f"plot_mc_stack={plot_mc_stack} has_mc={histdata.has_mc} "
             f"sum(mc_hist)={mc_hist_sum:.6g} n_layers={len(weights_categ)} "
             f"layer_totals={layer_totals} sum_layers={sum(layer_totals):.6g} "
-            f"has_data={histdata.has_data} sum(data_hist)={dtot:.6g}",
+            f"has_data={has_data} sum(data_hist)={dtot:.6g}",
             flush=True,
         )
 
@@ -646,7 +664,7 @@ def overlay_hists_from_histdata(
         fig, ax = plt.subplots(figsize=(8.5, 7))
         ax.set_xlabel(plot_labels[0], fontsize=20)
 
-    ax.set_xlim(bins[0], bins[-1])
+    ax.set_xlim(x_lo, x_hi)
     ax.set_ylabel(plot_labels[1], fontsize=20)
     ax.set_title(plot_labels[2], fontsize=20)
     ax.tick_params(axis='both', which='major', labelsize=15)
@@ -786,15 +804,17 @@ def overlay_hists_from_histdata(
                    facecolor='dimgray', edgecolor='dimgray', alpha=0.3,
                    linewidth=0.0, label='Syst. Unc. (Norm)')
 
-        if histdata.has_data:
+        if has_data:
             chi2_val, chi2_reduced, p_val, ndof, chi2_pull, chi2_shape_val, p_val_shape, ndof_shape = _overlay_compute_chi2(
                 total_data, total_mc, syst, data_eylow, data_eyhigh
             )
 
     # Data points (draw on top of MC stack)
-    if histdata.has_data:
-        ax.errorbar(bin_centers, total_data,
-                    yerr=np.vstack((data_eylow, data_eyhigh)),
+    # Bins with zero data are left off rather than drawn as points at 0.
+    if has_data:
+        data_nz = total_data > 0
+        ax.errorbar(bin_centers[data_nz], total_data[data_nz],
+                    yerr=np.vstack((data_eylow[data_nz], data_eyhigh[data_nz])),
                     color='black', fmt='o', markersize=5, capsize=3, linewidth=1.5,
                     label='Data', zorder=10)
 
@@ -827,7 +847,7 @@ def overlay_hists_from_histdata(
                 y_hi = np.nanmax(ratio_vals[valid] + ratio_err[valid])
                 margin = max(0.05 * (y_hi - y_lo), 0.05)
                 ax_r.set_ylim(y_lo - margin, y_hi + margin)
-        ax_r.set_xlim(_ratio_bins[0], _ratio_bins[-1])
+        ax_r.set_xlim(*((x_lo, x_hi) if xlim is not None else (_ratio_bins[0], _ratio_bins[-1])))
     elif ratio:
         if syst is not None and total_mc is not None:
             if syst_decomp == False:
@@ -878,12 +898,13 @@ def overlay_hists_from_histdata(
                          facecolor='dimgray', edgecolor='dimgray',
                          linewidth=0.0, label='Syst. Unc. (Norm)')
 
-        if histdata.has_data and total_mc is not None:
-            ax_r.errorbar(bin_centers, data_ratio,
-                          yerr=np.vstack((data_ratio_eylow, data_ratio_eyhigh)),
+        if has_data and total_mc is not None:
+            r_nz = (total_data > 0) & (total_mc != 0)
+            ax_r.errorbar(bin_centers[r_nz], data_ratio[r_nz],
+                          yerr=np.vstack((data_ratio_eylow[r_nz], data_ratio_eyhigh[r_nz])),
                           fmt='o', color='black',
                           markersize=5, capsize=3, linewidth=1.5, zorder=10)
-        ax_r.set_xlim(bins[0], bins[-1])
+        ax_r.set_xlim(x_lo, x_hi)
 
     # Legend: Data first; MC rows = signal-first physics categories → … → Low-E Dirt →
     # Cosmic (topology / pdg / genie). MC patches match stacked-layer colors (no
@@ -893,7 +914,7 @@ def overlay_hists_from_histdata(
     ordered_handles = []
     ordered_labels = []
 
-    if histdata.has_data:
+    if has_data:
         try:
             data_handle_index = labels_orig.index('Data')
             ordered_handles.append(handles[data_handle_index])
@@ -989,21 +1010,62 @@ def overlay_hists_from_histdata(
         # confirmed visually against a real topology-breakdown plot, where the
         # third column spilled outside the plot box. Shrink columns/fontsize as
         # entry count grows so the legend stays inside the axes.
+        # More columns = fewer rows = less vertical space taken from the plot.
         n_entries = len(ordered_labels)
-        if n_entries <= 4:
+        if n_entries <= 3:
             legend_ncol, legend_fontsize = 1, fontsize
-        elif n_entries <= 8:
+        elif n_entries <= 6:
             legend_ncol, legend_fontsize = 2, fontsize
         else:
-            legend_ncol, legend_fontsize = 2, fontsize - 2
-        ax.legend(ordered_handles, ordered_labels, loc='upper left',
-                  fontsize=legend_fontsize, frameon=False, ncol=legend_ncol)
+            legend_ncol, legend_fontsize = 3, fontsize - 3
+        leg = ax.legend(ordered_handles, ordered_labels, loc='upper left',
+                        fontsize=legend_fontsize, frameon=False, ncol=legend_ncol,
+                        columnspacing=1.0, handlelength=1.5, handletextpad=0.5)
+        # Shrink the font until the legend fits inside the axes width.
+        fig.canvas.draw()
+        while legend_fontsize > 7:
+            bb = leg.get_window_extent().transformed(ax.transAxes.inverted())
+            if bb.x1 <= 0.99:
+                break
+            legend_fontsize -= 1
+            leg = ax.legend(ordered_handles, ordered_labels, loc='upper left',
+                            fontsize=legend_fontsize, frameon=False, ncol=legend_ncol,
+                            columnspacing=1.0, handlelength=1.5, handletextpad=0.5)
+            fig.canvas.draw()
 
     # y-axis limit
-    if total_mc is not None and np.max(total_mc) > 0:
-        ax.set_ylim(0., ax_ylim_ratio * np.max(total_mc))
-    elif total_data is not None and np.max(total_data) > 0:
-        ax.set_ylim(0., ax_ylim_ratio * np.max(total_data))
+    if total_mc is not None and np.max(total_mc[vis]) > 0:
+        ax.set_ylim(0., ax_ylim_ratio * np.max(total_mc[vis]))
+    elif total_data is not None and np.max(total_data[vis]) > 0:
+        ax.set_ylim(0., ax_ylim_ratio * np.max(total_data[vis]))
+
+    # Raise the top of the axis just enough that the MC stack (+ syst band) and the
+    # data points clear the legend. Data error bars are allowed to run behind the
+    # legend, which gets a semi-transparent white background so it stays readable
+    # without blowing up the y-range.
+    leg = ax.get_legend()
+    if leg is not None:
+        leg.set_frame_on(True)
+        leg.get_frame().set_facecolor('white')
+        leg.get_frame().set_edgecolor('none')
+        leg.get_frame().set_alpha(0.8)
+        leg.set_zorder(20)
+    content_tops = []
+    if total_mc is not None:
+        mc_top = np.asarray(total_mc, dtype=float)
+        if syst is not None and 'syst_err' in locals() and syst_err is not None:
+            mc_top = mc_top + np.asarray(syst_err, dtype=float)
+        content_tops.append(np.nanmax(mc_top[vis]))
+    if has_data and np.any(total_data[vis] > 0):
+        content_tops.append(np.nanmax(total_data[vis][total_data[vis] > 0]))
+    if content_tops and leg is not None and max(content_tops) > 0:
+        fig.canvas.draw()
+        leg_bottom = leg.get_window_extent().transformed(ax.transAxes.inverted()).y0
+        # Small gap under the legend; don't let a very tall legend squash the plot.
+        usable = min(max(leg_bottom - 0.03, 0.35), 0.97)
+        needed_top = max(content_tops) / usable
+        if needed_top > ax.get_ylim()[1]:
+            ax.set_ylim(0., needed_top)
 
     # vertical lines
     if vline is not None:

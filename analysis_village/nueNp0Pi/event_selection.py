@@ -147,8 +147,10 @@ def build_runner(
     efficiency-curve accumulation isn't needed for that run. See
     ``run_batch_selection`` for the matching ``mcnu``-load skip.
     """
+    # Also off in the pi0 sideband (stages_mod.SELECTION_MODE), where signal efficiency
+    # isn't meaningful.
     efficiency_vars = (
-        [] if stages_mod.DISABLE_EFFICIENCY_ACCUMULATION else stages_mod.EFFICIENCY_VARS
+        stages_mod.EFFICIENCY_VARS if stages_mod.efficiency_enabled() else []
     )
     return ChunkRunner(
         sample=sample,
@@ -295,6 +297,44 @@ def ensure_trk_phi_col(trk_df: pd.DataFrame | None) -> None:
     )
 
 
+def rematch_mc_columns(evt_df: pd.DataFrame, mcnu_df: pd.DataFrame | None) -> pd.DataFrame:
+    """Re-attach the ``mc.*`` (mcnu) columns to each slice via its matched true neutrino.
+
+    The df maker's ``truth_match_spine`` joins mcnu on ``rec.dlp.id`` (the reco interaction
+    id), which is not the neutrino index, so most ``mc.*`` values on evt rows belong to the
+    wrong neutrino or are missing. The right key is the matched true interaction's
+    ``rec.dlp_true.nu_id``, which indexes ``rec.mc.nu`` within the same (__ntuple, entry).
+    Slices with no true neutrino (``nu_id < 0`` or unmatched) get NaN.
+    """
+    if mcnu_df is None or len(mcnu_df) == 0 or not isinstance(evt_df.columns, pd.MultiIndex):
+        return evt_df
+    nu_id_key = multicol_resolve_column_key(evt_df, ("rec", "dlp_true", "nu_id"))
+    if nu_id_key is None:
+        return evt_df
+    prefix_mcnu_columns(mcnu_df)
+    key_levels = list(mcnu_df.index.names[:-1])   # e.g. ['__ntuple', 'entry']
+    if not all(n in evt_df.index.names for n in key_levels):
+        logger.warning("rematch_mc_columns: evt index %s lacks %s; leaving mc.* as is",
+                       evt_df.index.names, key_levels)
+        return evt_df
+
+    nlev = evt_df.columns.nlevels
+    mc = mcnu_df.copy()
+    mc.columns = pd.MultiIndex.from_tuples(
+        [tuple(list(c) + [""] * (nlev - len(c)))[:nlev] for c in mc.columns]
+    )
+    nu_id = pd.to_numeric(evt_df[nu_id_key], errors="coerce").fillna(-1).astype(np.int64)
+    lookup = pd.MultiIndex.from_arrays(
+        [evt_df.index.get_level_values(n) for n in key_levels] + [nu_id.to_numpy()],
+        names=list(mcnu_df.index.names),
+    )
+    mc_aligned = mc.reindex(lookup)
+    mc_aligned.index = evt_df.index
+
+    keep = [c for c in evt_df.columns if c[0] != "mc"]
+    return pd.concat([evt_df[keep], mc_aligned], axis=1)
+
+
 def ensure_phi_and_kinematics_cols(
     evt_df: pd.DataFrame,
     trk_df: pd.DataFrame | None,
@@ -319,21 +359,52 @@ def run_batch_selection(
     max_splits_per_file: int | None = None,
     pipeline_trace=None,
 ) -> Dict[str, Any]:
-    """Load a file batch, run the notebook pipeline, write one pickle."""
+    """Load a file batch, run the pipeline for the current selection mode, write one pickle."""
+    return run_batch_selection_modes(
+        sample, df_files, {stages_mod.SELECTION_MODE: out_path},
+        job_id=job_id, use_mc_genweight=use_mc_genweight,
+        mc_univ_syst_tags=mc_univ_syst_tags, max_splits_per_file=max_splits_per_file,
+        pipeline_trace=pipeline_trace,
+    )
+
+
+def run_batch_selection_modes(
+    sample: str,
+    df_files: Sequence[str],
+    out_paths: Dict[str, str],
+    *,
+    job_id: str = "",
+    use_mc_genweight: bool = False,
+    mc_univ_syst_tags: Sequence[str] = (),
+    max_splits_per_file: int | None = None,
+    pipeline_trace=None,
+) -> Dict[str, Any]:
+    """Load a file batch once and run one pipeline per selection mode on it.
+
+    ``out_paths``: ``{selection_mode: pickle path}`` (e.g. signal and pi0_sideband). Each
+    mode gets its own ChunkRunner and pickle; the input files are read only once.
+    Returns the meta of the first mode.
+    """
     keys = list(KEYS2LOAD)
     # ``mcnu`` is only ever consumed by EfficiencyAccumulator's fill_denominator_from_mcnu
     # path, which nueNp0Pi's ChunkRunner never uses anyway (efficiency_denom_from_first_stage
     # defaults to True there -- fill_from_mcnu is unconditionally False). Skipping the load
     # entirely when DISABLE_EFFICIENCY_ACCUMULATION is set avoids that (already-unused) I/O too.
-    load_mcnu = (
-        sample == "mc"
-        and not stages_mod.DISABLE_EFFICIENCY_ACCUMULATION
-        and any(hdf_has_mcnu(f) for f in df_files)
-    )
+    # MC always loads mcnu: rematch_mc_columns needs it to fix the evt mc.* columns
+    load_mcnu = sample == "mc" and any(hdf_has_mcnu(f) for f in df_files)
     keys_load = keys + (["mcnu"] if load_mcnu else [])
 
     mc_univ_tags = tuple(mc_univ_syst_tags) if sample == "mc" else ()
-    runner = build_runner(sample, mc_univ_syst_tags=mc_univ_tags or None)
+    # build_pipeline()/build_runner() read SELECTION_MODE, so build each runner under its
+    # mode, then restore the caller's mode.
+    prev_mode = stages_mod.SELECTION_MODE
+    runners = {}
+    try:
+        for mode in out_paths:
+            stages_mod.set_selection_mode(mode)
+            runners[mode] = build_runner(sample, mc_univ_syst_tags=mc_univ_tags or None)
+    finally:
+        stages_mod.set_selection_mode(prev_mode)
 
     chunk_pot = [0.0]
     chunk_gates_bnb = [0.0]
@@ -366,13 +437,16 @@ def run_batch_selection(
         mcnu_df = file_dfs.get("mcnu") if load_mcnu else None
 
         attach_intrinsic_weights(evt_df, trk_df, sample, use_mc_genweight)
+        if sample == "mc":
+            evt_df = rematch_mc_columns(evt_df, mcnu_df)
         evt_df, mcnu_df = ensure_phi_and_kinematics_cols(evt_df, trk_df, mcnu_df)
         n_evt_total += int(len(evt_df))
 
-        runner.run(
-            {"evt": evt_df, "trk": trk_df, "hdr": hdr_df, "mcnu": mcnu_df},
-            pipeline_trace=pipeline_trace,
-        )
+        for runner in runners.values():
+            runner.run(
+                {"evt": evt_df, "trk": trk_df, "hdr": hdr_df, "mcnu": mcnu_df},
+                pipeline_trace=pipeline_trace,
+            )
 
         del file_dfs, evt_df, trk_df, hdr_df, mcnu_df
         gc.collect()
@@ -394,8 +468,12 @@ def run_batch_selection(
         "workflow": "batched_notebook",
         "mc_efficiency_enabled": load_mcnu,
     }
-    runner.save(out_path, extra_meta=meta)
-    return meta
+    metas = []
+    for mode, runner in runners.items():
+        m = dict(meta, selection_mode=mode)
+        runner.save(out_paths[mode], extra_meta=m)
+        metas.append(m)
+    return metas[0]
 
 
 # ===========================================================================

@@ -129,6 +129,8 @@ def run_grid(inputfiles):
     MasterJobDir = CAFPYANA_GRID_OUT_DIR + "/logs/" + timestamp + '__' + args.output + "_log"
     OutputDir = CAFPYANA_GRID_OUT_DIR + "/dfs/" + timestamp + '__' + args.output
     os.system('mkdir -p ' + MasterJobDir)
+    # create the output dir here too: ifdh mkdir_p on the worker can fail silently
+    os.system('mkdir -p ' + OutputDir)
 
     # 3) grid job is based on number of files
     ngrid = args.NGridJobs
@@ -171,6 +173,8 @@ def run_grid(inputfiles):
     cp_pyxrootd = "cp -r " + _site + "/pyxrootd " + MasterJobDir
     os.system(cp_XRootD)
     os.system(cp_pyxrootd)
+    # pyxrootd links its bundled libssl/libcrypto etc. from ../xrootd.libs
+    os.system("cp -r " + _site + "/xrootd.libs " + MasterJobDir)
 
     # 6) git archive of the current branch's last commit
     archive_repo = "git archive -o " + MasterJobDir + "/cafpyana.tar.gz HEAD"

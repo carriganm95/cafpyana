@@ -518,8 +518,8 @@ class EventSelectionPipeline:
                 reason = f"sample mismatch (pickle={d.get('sample')!r}, expected={job.sample!r})"
             else:
                 meta = d["meta"]
-                got_files = sorted(meta.get("df_files") or [])
-                want_files = sorted(job.files)
+                got_files = sorted(os.path.basename(f) for f in (meta.get("df_files") or []))
+                want_files = sorted(os.path.basename(f) for f in job.files)
                 if got_files != want_files:
                     reason = (
                         f"input file list mismatch ({len(got_files)} file(s) in pickle vs. "

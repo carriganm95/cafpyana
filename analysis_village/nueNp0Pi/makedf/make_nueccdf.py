@@ -119,6 +119,31 @@ def get_second_highest_ke_particle_idx(pfpdf, pdg, truth=False):
     best_idx = second.groupby(level=int_levels).idxmax()
     return best_idx.apply(lambda x: x[pfpdf.index.nlevels - 1])
 
+def truth_match_spine_nu_id(slcdf, mcdf):
+    """Attach mcnu columns (as ``mc.*``) to each SPINE interaction via its true neutrino.
+
+    Replaces ``makedf.truth_match_spine``, which joins on ``rec.dlp.id`` (the reco
+    interaction id) instead of the neutrino index. ``rec.dlp_true.nu_id`` of the matched
+    true interaction indexes ``rec.mc.nu`` within the same entry; slices with no true
+    neutrino (nu_id < 0 or unmatched) get NaN.
+    """
+    col = pad_column_name(("rec", "dlp", "is_matched"), slcdf)
+    slcdf.loc[slcdf[col] != 1, col] = np.nan
+
+    nlevels = slcdf.columns.nlevels
+    mcdf = mcdf.copy()
+    mcdf.columns = pd.MultiIndex.from_tuples(
+        [tuple(["mc"] + list(c) + [""] * (nlevels - len(c) - 1)) for c in mcdf.columns])
+    nu_id = pd.to_numeric(slcdf[pad_column_name(("rec", "dlp_true", "nu_id"), slcdf)],
+                          errors="coerce").fillna(-1).astype(np.int64)
+    lookup = pd.MultiIndex.from_arrays(
+        [slcdf.index.get_level_values(n) for n in mcdf.index.names[:-1]] + [nu_id.to_numpy()],
+        names=list(mcdf.index.names))
+    aligned = mcdf.reindex(lookup)
+    aligned.index = slcdf.index
+    return pd.concat([slcdf, aligned], axis=1)
+
+
 def _remap_true_to_reco(series, slcdf):
     """Map a Series indexed by [entry, rec.dlp_true..index] to slcdf's [entry, rec.dlp..index].
 
@@ -643,7 +668,7 @@ def make_nueNp0Pi_df(f):
 
     slcdf = multicol_merge(slcdf, hdrdf, left_index=True, right_index=True, how="left", validate="many_to_one")
 
-    return truth_match_spine(slcdf, mcdf)
+    return truth_match_spine_nu_id(slcdf, mcdf)
 
 
 def make_spine_part_reco_df(f):

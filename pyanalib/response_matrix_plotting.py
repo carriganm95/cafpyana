@@ -41,6 +41,10 @@ def response_matrix_from_histdata(
     annotate: bool = True,
     annotate_fmt: str = "{:.1f}%",
     annotate_fontsize: Optional[float] = None,
+    min_annotate_pct: float = 1.0,
+    small_cell_min_pct: float = 5.0,
+    small_cell_fontsize: float = 6.0,
+    min_fontsize: float = 3.0,
     colorbar_label: str = "Counts",
     figsize: Tuple[float, float] = (8.5, 7.5),
     plot: bool = True,
@@ -75,6 +79,15 @@ def response_matrix_from_histdata(
     annotate_fontsize : float, optional
         Defaults to a size that scales down automatically as the grid gets denser (more bins
         -> smaller text), so labels stay legible without per-variable tuning.
+    min_annotate_pct : float
+        Cells whose column fraction is below this (in %) get no text label, to cut
+        clutter. Default 1.0; set 0 to label every cell.
+    small_cell_min_pct, small_cell_fontsize : float
+        When ``annotate_fontsize`` is not given, each label is sized to fit its own cell
+        (so narrow bins get smaller text, capped at 9 pt). Cells whose fitted size is
+        below ``small_cell_fontsize`` use the stricter ``small_cell_min_pct`` cutoff and a
+        compact whole-number label (e.g. ``18`` instead of ``18.3%``); labels that still
+        don't fit at ``min_fontsize`` are skipped rather than allowed to overlap.
 
     Returns
     -------
@@ -121,17 +134,43 @@ def response_matrix_from_histdata(
 
     if annotate:
         bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        widths = np.diff(bins)
         vmax = counts.max() if counts.size else 0.0
-        resolved_fontsize = (
-            annotate_fontsize if annotate_fontsize is not None
-            else max(4.0, min(9.0, 110.0 / max(n_bin, 1)))
-        )
+        # Axes size in points, to fit each label inside its own cell.
+        pos = ax.get_position()
+        ax_w_pt = pos.width * fig.get_figwidth() * 72.0
+        ax_h_pt = pos.height * fig.get_figheight() * 72.0
+        span = float(bins[-1] - bins[0]) or 1.0
+        n_chars = len(annotate_fmt.format(88.8))
         for i in range(n_bin):        # reco bin (row / y)
             for j in range(n_bin):    # true bin (col / x)
+                fmt = annotate_fmt
+                if annotate_fontsize is not None:
+                    fs = annotate_fontsize
+                    min_pct = min_annotate_pct
+                else:
+                    cell_w_pt = widths[j] / span * ax_w_pt
+                    cell_h_pt = widths[i] / span * ax_h_pt
+
+                    def _fit(nc):
+                        # ~0.6 em per character, leave a small margin
+                        return min(9.0, 0.9 * cell_w_pt / (0.6 * nc), 0.8 * cell_h_pt)
+
+                    fs = _fit(n_chars)
+                    min_pct = min_annotate_pct
+                    if fs < small_cell_fontsize:
+                        # small cell: stricter cutoff, compact whole-number label (no "%")
+                        min_pct = small_cell_min_pct
+                        fmt = "{:.0f}"
+                        fs = _fit(len(fmt.format(pct[i, j])))
+                    if fs < min_fontsize:
+                        continue  # can't fit legibly -- leave the cell unlabelled
+                if pct[i, j] < min_pct:
+                    continue
                 color = "white" if (vmax > 0 and counts[i, j] / vmax > 0.5) else "black"
                 ax.text(
-                    bin_centers[j], bin_centers[i], annotate_fmt.format(pct[i, j]),
-                    ha="center", va="center", fontsize=resolved_fontsize, color=color,
+                    bin_centers[j], bin_centers[i], fmt.format(pct[i, j]),
+                    ha="center", va="center", fontsize=fs, color=color,
                 )
 
     ax.set_xlim(bins[0], bins[-1])

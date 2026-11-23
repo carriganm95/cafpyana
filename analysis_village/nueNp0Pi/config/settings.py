@@ -70,7 +70,8 @@ genie_mode_list = [0, # CCQE
                    1, # CCRES
                    2, # CCDIS
                    3, # CCMEC
-                   4, # CC Other
+                   4, # CC Other (signal)
+                   5, # non-signal CC
                    -1, # NC
                    -2  # Cosmic
                    ]
@@ -80,6 +81,7 @@ genie_mode_labels = [ r'$\nu_e$ CC QE',
                         r'$\nu_e$ CC DIS',
                         r'$\nu_e$ CC MEC',
                         r'$\nu_e$ CC Other',
+                        r'$\nu$ CC Other',
                         r"$\nu$ NC",
                         "Cosmic"]
 
@@ -88,7 +90,8 @@ genie_mode_colors = ['#228833',  # QE
                      '#EE6677',  # RES
                      '#4477AA',  # DIS
                      '#CCBB44',  # MEC
-                     '#AA3377',  # CC Other
+                     '#AA3377',  # CC Other (signal)
+                     '#882255',  # non-signal CC
                      '#66CCEE',  # NC
                      '#BBBBBB']  # Cosmic
 

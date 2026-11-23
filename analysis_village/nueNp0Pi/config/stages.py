@@ -29,8 +29,10 @@ configurable via the ``N_MINUS_1_*`` module attributes (see the comment above th
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+import numpy as np
 import pandas as pd
 
 from analysis_village.nueNp0Pi.config.plots import (
@@ -42,10 +44,12 @@ from pyanalib.variable_config import is_integrated_var_config
 from analysis_village.nueNp0Pi.config.settings import (
     topology_labels, genie_mode_labels, genie_sb_mode_labels, pdg_labels,
     ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
+    ELE_KE_TH, P_KE_TH, PI_KE_TH, GAM_KE_TH, PI0_LEAD_GAM_KE_TH, PI0_SUB_GAM_KE_TH,
 )
 from analysis_village.nueNp0Pi.selections import (
     fiducial_volume, contained, flash_matched,
     no_muons, no_pions, no_photons, good_electron, good_proton, electron_softmax, proton_softmax,
+    pi0_lead_photon, pi0_sub_photon,
     electron_primary, electron_vertex_distance, electron_dedx,
     get_topo_category_nueNp0Pi, get_genie_category_spine, get_pdg_category_spine,
 )
@@ -275,10 +279,18 @@ EFFICIENCY_VARS = with_final_selected_evt_variables(
 #   it's back in the default set below.)
 # ===========================================================================
 _EVT_BREAKDOWN_STALE_RECO_COL_VARS = frozenset({"vertex_x", "vertex_y", "vertex_z"})
+# pi0 / photon variables: shown in the standard selection plots but not in EFFICIENCY_VARS
+# (no efficiency curves or truth plots). Mostly empty in signal mode (photon veto); they're
+# what the pi0 sideband is for.
+PI0_PLOT_VARS: List[Any] = [
+    VariableConfig.pi0_mass(),
+    VariableConfig.leading_photon_energy(),
+    VariableConfig.subleading_photon_energy(),
+]
 EVT_BREAKDOWN_VARS: List[Any] = [
     vc for vc in EFFICIENCY_VARS
     if not is_integrated_var_config(vc) and vc.var_save_name not in _EVT_BREAKDOWN_STALE_RECO_COL_VARS
-]
+] + PI0_PLOT_VARS
 EVT_BREAKDOWN_TYPE: str | Sequence[str] = ["topology", "genie"]
 EVT_BREAKDOWN_STAGE_KEYS: Optional[Sequence[str]] = None  # None -> final stage only
 # Subdirectory (under the plots dir) these plots render to -- None -> "selection", matching
@@ -297,6 +309,10 @@ EVT_BREAKDOWN_DIR_NAME: Optional[str] = None
 # live-read-at-render-time pattern as EVT_BREAKDOWN_DIR_NAME above -- read by
 # event_selection_aggregate.py's render_overlay_plots via ``stages_mod.DISABLE_RATIO_PLOTS``.
 DISABLE_RATIO_PLOTS: bool = False
+# Data/MC overlays: True scales the MC stack to the data integral (area normalized);
+# False keeps the MC scaled to data POT. Temporarily area normalized -- set back to
+# False to return to POT normalization.
+AREA_NORMALIZE_OVERLAYS: bool = True
 
 # Global kill switch for the per-VariableConfig true-vs-reco response-matrix plot
 # (VariableConfig.response_matrix -- see pyanalib.variable_config /
@@ -317,6 +333,33 @@ DISABLE_RESPONSE_MATRIX_PLOTS: bool = False
 # before calling build_event_selection_pipeline()/build_runner(). Does NOT affect
 # save_for_breakdown (bar/cutflow counts) -- those come from a separate accumulator.
 DISABLE_EFFICIENCY_ACCUMULATION: bool = False
+
+# ===========================================================================
+# Selection mode
+# ---------------------------------------------------------------------------
+#   "signal"       -- the nueNp0Pi selection (default).
+#   "pi0_sideband" -- same cuts minus the photon veto and electron dE/dx cut, plus two
+#                     reco photons (leading > PI0_LEAD_GAM_KE_TH, subleading >
+#                     PI0_SUB_GAM_KE_TH). Matches makedf/make_nueccdf.py's
+#                     _apply_pi0_sideband_cuts, but runs on the all-slice inputs so the
+#                     cutflow is available. Signal efficiency is not accumulated.
+# Set with the NUENP0PI_SELECTION env var or set_selection_mode() before building the
+# pipeline (run_event_selection_map.py -selection / event_selection_aggregate.py --selection).
+# ===========================================================================
+SELECTION_MODES = ("signal", "pi0_sideband")
+SELECTION_MODE: str = os.environ.get("NUENP0PI_SELECTION", "signal")
+
+
+def set_selection_mode(mode: str) -> None:
+    global SELECTION_MODE
+    if mode not in SELECTION_MODES:
+        raise ValueError(f"unknown selection mode {mode!r} (have: {SELECTION_MODES})")
+    SELECTION_MODE = mode
+    os.environ["NUENP0PI_SELECTION"] = mode  # so child processes (map pool) agree
+
+
+def efficiency_enabled() -> bool:
+    return not DISABLE_EFFICIENCY_ACCUMULATION and SELECTION_MODE == "signal"
 
 
 # ===========================================================================
@@ -358,11 +401,64 @@ DISABLE_EFFICIENCY_ACCUMULATION: bool = False
 # good_electron, good_proton) gate on precomputed boolean reco flags, not a continuous
 # score with a meaningful threshold to draw, so they have no entry here -- add one only if
 # you plot a variable for one of those cuts where a line would be meaningful.
-N_MINUS_1_STAGE_KEYS: Sequence[str] = ()
-N_MINUS_1_VARS: Dict[str, Sequence[Any]] = {}
+# On by default (2026-10-28) so grid map jobs, which can't take notebook overrides, make
+# N-1 plots: every cut with a threshold line below, plotted in that line's variable.
+# no_muons is left out: leading_muon_ke has no VariableConfig yet.
+N_MINUS_1_STAGE_KEYS: Sequence[str] = (
+    "good_electron", "good_proton", "no_pions", "no_photons",
+    "electron_softmax", "electron_primary", "proton_softmax",
+    "electron_vertex_distance", "electron_dedx",
+)
+N_MINUS_1_VARS: Dict[str, Sequence[Any]] = {
+    "good_electron":            [VariableConfig.electron_energy()],
+    "good_proton":              [VariableConfig.leading_proton_ke()],
+    "no_pions":                 [VariableConfig.leading_pion_ke()],
+    # leading reco photon energy; slices with no reco photon have no value and aren't drawn
+    "no_photons":               [VariableConfig.leading_photon_energy()],
+    "electron_softmax":         [VariableConfig.electron_softmax_score()],
+    "electron_primary":         [VariableConfig.electron_primary_score()],
+    "proton_softmax":           [VariableConfig.proton_softmax_score()],
+    "electron_vertex_distance": [VariableConfig.electron_vertex_distance()],
+    "electron_dedx":            [VariableConfig.electron_dedx()],
+    "pi0_lead_photon":          [VariableConfig.leading_photon_energy()],
+    "pi0_sub_photon":           [VariableConfig.subleading_photon_energy()],
+}
+# Extra N-1 keys used only in pi0_sideband mode (those stages don't exist in signal mode).
+# In either mode, keys whose stage isn't in the pipeline are skipped.
+N_MINUS_1_SIDEBAND_STAGE_KEYS: Sequence[str] = ("pi0_lead_photon", "pi0_sub_photon")
 N_MINUS_1_DEFAULT_VARS: Sequence[Any] = ()
+# Per-cut bin overrides for N-1 plots, keyed like N_MINUS_1_VARS. Out-of-range values are
+# clipped into the first/last bin, so a variable whose normal binning starts at the cut
+# (electron E, proton KE) would squeeze every removed event into one narrow edge bin. These
+# bins add a full-width region below the cut and/or a wide overflow bin above the usual
+# range so those events are drawn where they sit.
+N_MINUS_1_BINS: Dict[str, np.ndarray] = {
+    # GeV: 0-0.5 holds everything the 0.5 GeV cut removes, then the usual analysis bins.
+    "good_electron":            np.r_[0.0, VariableConfig.electron_energy().bins],
+    # MeV: 0-40 is the region below the cut; >1500 lands in the 1000-1500 bin.
+    "good_proton":              np.array([0., 40., 100., 200., 300., 400., 500., 700., 1000., 1500.]),
+    # MeV: 0-25 is below the cut (pions there don't veto); >2000 lands in the 1000-2000 bin.
+    "no_pions":                 np.array([0., 25., 50., 100., 200., 300., 500., 1000., 2000.]),
+    # MeV: 0-25 is below the photon-veto cut; >1000 lands in the 650-1000 bin.
+    "no_photons":               np.array([0., 25., 50., 100., 175., 250., 400., 650., 1000.]),
+    # MeV/cm: 0.5 MeV/cm bins to 6, then a 6-10 overflow bin (kept in the data, not drawn --
+    # see N_MINUS_1_XLIM).
+    "electron_dedx":            np.r_[np.linspace(0.0, 6.0, 13), 10.0],
+    # cm: 0.2 cm bins to 4, then a 4-6 overflow bin (kept in the data, not drawn).
+    "electron_vertex_distance": np.r_[np.linspace(0.0, 4.0, 21), 6.0],
+    # MeV: 0-175 is below the leading-photon cut.
+    "pi0_lead_photon":          np.array([0., 100., 175., 250., 325., 400., 500., 650., 800., 1000.]),
+    # MeV: 0-25 is below the subleading-photon cut.
+    "pi0_sub_photon":           np.array([0., 25., 50., 75., 100., 150., 200., 300., 500.]),
+}
 N_MINUS_1_BREAKDOWN_TYPE: str = "topology"
 N_MINUS_1_DIR_NAME: Optional[str] = None  # None -> "n_minus_1"
+# Per-cut x-range to draw for N-1 plots. Bins outside it (overflow) stay in the saved
+# histogram data but aren't shown, and don't set the y-range.
+N_MINUS_1_XLIM: Dict[str, Tuple[float, float]] = {
+    "electron_dedx":            (0.0, 6.0),
+    "electron_vertex_distance": (0.0, 4.0),
+}
 N_MINUS_1_VLINES: Dict[str, Dict[str, Sequence[Tuple[float, int]]]] = {
     # Inner key is var_save_name; vline only applied to the matching variable.
     "electron_softmax":         {"electron-softmax-score":   [(ELE_SOFTMAX_TH, 1)]},
@@ -370,11 +466,13 @@ N_MINUS_1_VLINES: Dict[str, Dict[str, Sequence[Tuple[float, int]]]] = {
     "proton_softmax":           {"proton-softmax-score":     [(P_SOFTMAX_TH, 1)]},
     "electron_vertex_distance": {"electron-vertex-distance": [(ELE_VTXDIST_TH, 0)]},
     "electron_dedx":            {"electron-dedx":            [(ELE_DEDX_TH, 0)]},
-    "good_electron":            {"electron-e":               [(0.5, 1)]},
-    "good_proton":              {"leading_proton_ke":        [(0.04, 1)]},
+    "good_electron":            {"electron-e":               [(ELE_KE_TH / 1000.0, 1)]},  # MeV -> GeV
+    "good_proton":              {"leading_proton_ke":        [(P_KE_TH, 1)]},   # MeV
     "no_muons":                 {"leading_muon_ke":          [(0.025, 0)]},
-    "no_pions":                 {"leading_pion_ke":          [(0.025, 0)]},
-    # no_photons: leading_photon_ke not yet defined; add entry here when it is.
+    "no_pions":                 {"leading_pion_ke":          [(PI_KE_TH, 0)]},  # MeV
+    "pi0_lead_photon":          {"leading-photon-e":         [(PI0_LEAD_GAM_KE_TH, 1)]},  # MeV
+    "pi0_sub_photon":           {"subleading-photon-e":      [(PI0_SUB_GAM_KE_TH, 1)]},   # MeV
+    "no_photons":               {"leading-photon-e":         [(GAM_KE_TH, 0)]},  # MeV
 }
 
 
@@ -389,6 +487,9 @@ def build_pipeline() -> List[Stage]:
     propagate end-to-end.
     """
     stages: List[Stage] = []
+    if SELECTION_MODE not in SELECTION_MODES:
+        raise ValueError(f"SELECTION_MODE={SELECTION_MODE!r} (have: {SELECTION_MODES})")
+    sideband = SELECTION_MODE == "pi0_sideband"
 
     # ------------------------------------------------------------------
     # Stage 0: all reconstructed slices (no cut)
@@ -450,22 +551,24 @@ def build_pipeline() -> List[Stage]:
         save_for_breakdown=True,
     ))
 
-    stages.append(Stage(
-        key="no_photons",
-        label="No Photons >= 100 MeV",
-        **_evt_cut(no_photons),
-        plots=[
-            PlotSpec(
-                var_config=VariableConfig.particle_ke(),
-                breakdown_type="pdg",
-                selector=sel_primary_trks,
-                plot_label_template=("Particle KE", "Primary Particles / Bin (POT={pot})", ""),
-                save_kwargs={"ratio": False},
-            ),
-        ],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+    # pi0 sideband: no photon veto (the two-photon requirement comes at the end).
+    if not sideband:
+        stages.append(Stage(
+            key="no_photons",
+            label=f"No Photons >= {GAM_KE_TH:g} MeV",
+            **_evt_cut(no_photons),
+            plots=[
+                PlotSpec(
+                    var_config=VariableConfig.particle_ke(),
+                    breakdown_type="pdg",
+                    selector=sel_primary_trks,
+                    plot_label_template=("Particle KE", "Primary Particles / Bin (POT={pot})", ""),
+                    save_kwargs={"ratio": False},
+                ),
+            ],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
 
     stages.append(Stage(
         key="good_electron",
@@ -521,14 +624,33 @@ def build_pipeline() -> List[Stage]:
         save_for_breakdown=True,
     ))
 
-    stages.append(Stage(
-        key='electron_dedx',
-        label='Electron dEdx < 4 MeV/cm',
-        **_evt_cut(electron_dedx),
-        plots=[],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+    if not sideband:
+        stages.append(Stage(
+            key='electron_dedx',
+            label='Electron dEdx < 4 MeV/cm',
+            **_evt_cut(electron_dedx),
+            plots=[],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
+    else:
+        # pi0 sideband: no electron dE/dx cut; require two reco photons instead.
+        stages.append(Stage(
+            key="pi0_lead_photon",
+            label=f"Leading Photon > {PI0_LEAD_GAM_KE_TH:g} MeV",
+            **_evt_cut(pi0_lead_photon),
+            plots=[],
+            save_for_efficiency=False,
+            save_for_breakdown=True,
+        ))
+        stages.append(Stage(
+            key="pi0_sub_photon",
+            label=f"Subleading Photon > {PI0_SUB_GAM_KE_TH:g} MeV",
+            **_evt_cut(pi0_sub_photon),
+            plots=[],
+            save_for_efficiency=False,
+            save_for_breakdown=True,
+        ))
 
     # ------------------------------------------------------------------
     # Event-distribution breakdown plots (notebook-configurable -- see the
@@ -575,7 +697,14 @@ def build_pipeline() -> List[Stage]:
     # N-1 plots (notebook-configurable -- see the N_MINUS_1_* module attributes above).
     # Off by default (N_MINUS_1_STAGE_KEYS starts empty).
     # ------------------------------------------------------------------
-    if N_MINUS_1_STAGE_KEYS:
+    n1_keys = [k for k in N_MINUS_1_STAGE_KEYS]
+    if sideband:
+        n1_keys += [k for k in N_MINUS_1_SIDEBAND_STAGE_KEYS if k not in n1_keys]
+    # Skip held-out keys whose stage isn't in this mode's pipeline (e.g. electron_dedx in
+    # the sideband).
+    present = {s.key for s in stages}
+    n1_keys = [k for k in n1_keys if k in present]
+    if n1_keys:
         if N_MINUS_1_BREAKDOWN_TYPE not in BREAKDOWN_REGISTRY:
             raise ValueError(
                 "N_MINUS_1_BREAKDOWN_TYPE=%r is not a key in BREAKDOWN_REGISTRY (have: %s)"
@@ -584,7 +713,7 @@ def build_pipeline() -> List[Stage]:
         stage_by_key = {s.key: s for s in stages}
         final_stage = stages[-1]
         eligible_keys = sorted(s.key for s in stages if s.mask_fn is not None)
-        for held_out_key in N_MINUS_1_STAGE_KEYS:
+        for held_out_key in n1_keys:
             if held_out_key not in stage_by_key:
                 raise ValueError(
                     "N_MINUS_1_STAGE_KEYS: unknown stage key %r (have: %s)"
@@ -598,8 +727,13 @@ def build_pipeline() -> List[Stage]:
                 )
             var_configs = N_MINUS_1_VARS.get(held_out_key, N_MINUS_1_DEFAULT_VARS)
             vline_map = N_MINUS_1_VLINES.get(held_out_key)
+            n1_bins = N_MINUS_1_BINS.get(held_out_key)
             for var_config in var_configs:
+                if n1_bins is not None:
+                    var_config = var_config.with_bins(n1_bins)
                 save_kwargs = {"show_genie_label": False}
+                if held_out_key in N_MINUS_1_XLIM:
+                    save_kwargs["xlim"] = N_MINUS_1_XLIM[held_out_key]
                 if vline_map is not None:
                     vline = vline_map.get(var_config.var_save_name)
                     if vline is not None:

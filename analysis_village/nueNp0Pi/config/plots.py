@@ -174,14 +174,15 @@ class VariableConfig(_BaseVariableConfig):
         return cls(
             var_save_name="leading_proton_ke",
             var_plot_name="E_p",
-            var_labels=[r"$\mathrm{E_p}$ [GeV]", 
-            r"$\mathrm{E_p^{reco.}}$ [GeV]", 
-            r"$\mathrm{E_p^{true}}$ [GeV]"],
-            bins=np.array([0.040, 0.380,  0.480,  0.580,  0.710,  0.920, 1.500]),
+            # proton_energy_* columns are kinetic energy in MeV (same units as P_KE_TH).
+            var_labels=[r"$\mathrm{E_p}$ [MeV]", 
+            r"$\mathrm{E_p^{reco.}}$ [MeV]", 
+            r"$\mathrm{E_p^{true}}$ [MeV]"],
+            bins=np.array([40., 380., 480., 580., 710., 920., 1500.]),
             var_evt_reco_col=('rec', 'dlp', 'proton_energy_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'proton_energy_true', '', '', '', ''),
             var_nu_col=('mc', 'p', 'totp'),
-            xsec_label=r"$\frac{d\sigma}{dE_p}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            xsec_label=r"$\frac{d\sigma}{dE_p}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
             response_matrix=True,
             ratio_mode="data_mc", # other options data_mc, reco_true
             ratio_signal_indices=[0, 1],
@@ -251,14 +252,15 @@ class VariableConfig(_BaseVariableConfig):
         return cls(
             var_save_name="leading_pion_ke",
             var_plot_name="E_\pi",
-            var_labels=[r"$\mathrm{E_\pi}$ [GeV]", 
-            r"$\mathrm{E_\pi^{reco.}}$ [GeV]", 
-            r"$\mathrm{E_\pi^{true}}$ [GeV]"],
-            bins=np.linspace(0.0, 3.0, 30),
+            # pion_energy_* columns are kinetic energy in MeV (same units as PI_KE_TH).
+            var_labels=[r"$\mathrm{E_\pi}$ [MeV]", 
+            r"$\mathrm{E_\pi^{reco.}}$ [MeV]", 
+            r"$\mathrm{E_\pi^{true}}$ [MeV]"],
+            bins=np.linspace(0.0, 3000.0, 30),
             var_evt_reco_col=('rec', 'dlp', 'pion_energy_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp_true', 'pion_energy_true', '', '', '', ''),
             var_nu_col=('rec', 'dlp_true', 'pion_energy_true', '', '', ''),
-            xsec_label=r"$\frac{d\sigma}{dP_\pi}$ $\left[\frac{\mathrm{cm}^2}{(\mathrm{GeV}/c)\ \mathrm{Ar}}\right]$",
+            xsec_label=r"$\frac{d\sigma}{dE_\pi}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
             response_matrix=True,
             ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
@@ -794,7 +796,7 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"Electron dE/dx", 
             r"Electron dE/dx", 
             r"Electron dE/dx"],
-            bins=np.linspace(0.0, 10.0, 20),
+            bins=np.linspace(0.0, 6.0, 12),
             var_evt_reco_col=('rec', 'dlp', 'ele_dedx_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp', 'ele_dedx_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_dedx_reco', '', ''),
@@ -813,12 +815,70 @@ class VariableConfig(_BaseVariableConfig):
             var_labels=[r"Electron Vertex Distance [cm]", 
             r"Electron Vertex Distance [cm]", 
             r"Electron Vertex Distance [cm]"],
-            bins=np.linspace(0.0, 10.0, 20),
+            bins=np.linspace(0.0, 4.0, 20),
             var_evt_reco_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', '', '', ''),
             var_evt_truth_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', '', '', ''),
             var_nu_col=('rec', 'dlp', 'ele_vertex_distance_reco', '', ''),
             xsec_label=r"$\frac{d\sigma}{d\mathrm{Electron Vertex Distance}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{Ar}}\right]$",
             ratio_mode="data_mc", # other options data_mc, reco_true
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    # ==== pi0 sideband variables (columns are in MeV) ====
+    @classmethod
+    def pi0_mass(cls):
+        return cls(
+            var_save_name="pi0-mass",
+            var_plot_name=r"$m_{\gamma\gamma}$",
+            var_labels=[r"$\mathrm{m_{\gamma\gamma}}$ [MeV]",
+            r"$\mathrm{m_{\gamma\gamma}^{reco.}}$ [MeV]",
+            r"$\mathrm{m_{\gamma\gamma}^{true}}$ [MeV]"],
+            bins=np.linspace(0.0, 600.0, 16),
+            var_evt_reco_col=('rec', 'dlp', 'pi0_mass_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'pi0_mass_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'pi0_mass_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dm_{\gamma\gamma}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
+            ratio_mode="data_mc",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
+    def leading_photon_energy(cls):
+        return cls(
+            var_save_name="leading-photon-e",
+            var_plot_name=r"$E_{\gamma_1}$",
+            var_labels=[r"$\mathrm{E_{\gamma_1}}$ [MeV]",
+            r"$\mathrm{E_{\gamma_1}^{reco.}}$ [MeV]",
+            r"$\mathrm{E_{\gamma_1}^{true}}$ [MeV]"],
+            bins=np.array([175., 250., 325., 400., 500., 650., 800., 1000.]),
+            var_evt_reco_col=('rec', 'dlp', 'photon_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'photon_energy_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'photon_energy_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dE_{\gamma_1}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
+            ratio_mode="data_mc",
+            ratio_signal_indices=[0, 1],
+            ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
+            ratio_breakdown_type="topology",
+        )
+
+    @classmethod
+    def subleading_photon_energy(cls):
+        return cls(
+            var_save_name="subleading-photon-e",
+            var_plot_name=r"$E_{\gamma_2}$",
+            var_labels=[r"$\mathrm{E_{\gamma_2}}$ [MeV]",
+            r"$\mathrm{E_{\gamma_2}^{reco.}}$ [MeV]",
+            r"$\mathrm{E_{\gamma_2}^{true}}$ [MeV]"],
+            bins=np.array([25., 50., 75., 100., 150., 200., 300., 500.]),
+            var_evt_reco_col=('rec', 'dlp', 'subprim_photon_energy_reco', '', '', '', ''),
+            var_evt_truth_col=('rec', 'dlp_true', 'subprim_photon_energy_true', '', '', '', ''),
+            var_nu_col=('rec', 'dlp_true', 'subprim_photon_energy_true', '', ''),
+            xsec_label=r"$\frac{d\sigma}{dE_{\gamma_2}}$ $\left[\frac{\mathrm{cm}^2}{\mathrm{MeV}\ \mathrm{Ar}}\right]$",
+            ratio_mode="data_mc",
             ratio_signal_indices=[0, 1],
             ratio_bkgd_indices=[2, 3, 4, 5, 6, 7, 8, 9, 10],
             ratio_breakdown_type="topology",

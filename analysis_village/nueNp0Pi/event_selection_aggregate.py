@@ -90,6 +90,7 @@ from analysis_village.nueNp0Pi.config.settings import (
     pdg_labels,
 )
 from pyanalib.stat_helpers import return_data_stat_err
+from pyanalib.variable_config import INTEGRATED_VAR_SAVE_NAME
 
 # style sheet that the notebook uses
 try:
@@ -127,6 +128,15 @@ def parse_args():
         default=None,
         help="Root directory with MCstat/, Flux/, G4/, GENIE/, Cosmics/, Detector/ trees "
              "(see analysis_village.nueNp0Pi.syst_disk_layout). Env: NUMUCC_SYST_DISK_ROOT.",
+    )
+    p.add_argument(
+        "--selection", default=None, choices=("signal", "pi0_sideband"),
+        help="Selection the batch pickles were made with. Default: read it from the "
+             "pickles (older pickles without it count as 'signal'). Aborts on a mismatch.",
+    )
+    p.add_argument(
+        "--no-syst", action="store_true", default=False,
+        help="Skip all systematic uncertainty bands (equivalent to NUMUCC_SYST_DISK_ROOT='').",
     )
     p.add_argument(
         "--no_breakdown_independent", dest="render_breakdown_independent",
@@ -253,6 +263,10 @@ def _apply_ratio_kwargs(hd, var_config, kwargs: dict, disable_ratio_plots: bool)
         return kwargs
 
     if ratio_mode == "data_mc":
+        # Truth-based variables don't draw data, so a Data/MC panel would be empty.
+        if getattr(var_config, "uses_truth", False):
+            kwargs["ratio"] = False
+            return kwargs
         kwargs["ratio"] = True
         if getattr(var_config, "ratio_label", None):
             kwargs.setdefault("ratio_label", var_config.ratio_label)
@@ -361,7 +375,9 @@ def render_overlay_plots(
                 ps.plot_label_template[2].replace("{pot}", pot_str) if len(ps.plot_label_template) >= 3 else "",
             ]
         else:
-            plot_labels = [ps.var_config.var_labels[0], f"Events / Bin (POT={pot_str})", ""]
+            plot_labels = [ps.var_config.var_labels[0],
+                           "Events / Bin" if stages_mod.AREA_NORMALIZE_OVERLAYS
+                           else f"Events / Bin (POT={pot_str})", ""]
 
         if ps.selector is sel_evt:
             # Stacked event-distribution breakdown plots (config/stages.py's
@@ -413,8 +429,11 @@ def render_overlay_plots(
         # while the y-axis label ("Events / Bin (POT=...)") right next to it
         # already uses the real computed pot_str. Confirmed by a user screenshot
         # showing the two disagree (8.8e19 top-right vs. 1.42e19 on the y-axis).
-        kwargs.setdefault("pot_annotation_text", f"{pot_str} POT")
+        kwargs.setdefault("pot_annotation_text",
+                          f"{pot_str} POT" + (" (Area Norm)" if stages_mod.AREA_NORMALIZE_OVERLAYS else ""))
         kwargs.setdefault("verbose_hist", (ps.name_suffix or "") == "final")
+        # MC stack scaled to the data integral (no-op on plots without data)
+        kwargs.setdefault("density", stages_mod.AREA_NORMALIZE_OVERLAYS)
         # Match ``selected_events.ipynb``: combined syst as hatched band (not norm/shape/mixed fill).
         kwargs.setdefault("syst_decomp", False)
         # Drop retired overlay kwargs if any pipeline PlotSpec still sets them.
@@ -752,6 +771,183 @@ def _save_or_show(fig, save_fig_dir, subdir, var_save_name, save_fig, show_fig):
     _save_fig_and_pkl(fig, save_fig_dir, rel_name, save_fig, show_fig)
 
 
+def _truth_signal_counts(ea, var_config):
+    """Denominator (first-stage true signal) histogram with undefined-truth events removed.
+
+    ``fill_denominator_from_first_stage_evt`` folds signal events with a NaN truth value
+    into bin 0 (and for the proton multiplicity, true-signal events with a true proton
+    count of 0 land there too). Both are taken back out here. Returns
+    ``(n_pot, n_raw, n_dropped_pot, note)`` where ``note`` is a warning string or "".
+    """
+    n_pot = np.asarray(ea.n_truth_nu_pot, dtype=float).copy()
+    n_raw = np.asarray(ea.n_truth_nu_raw, dtype=float).copy()
+    truth_col = getattr(var_config, "var_evt_truth_col", None) or ()
+    is_np = len(truth_col) > 2 and truth_col[2] == "proton_count_true"
+    bins = np.asarray(var_config.bins, dtype=float)
+
+    nan_pot = getattr(ea, "n_truth_nu_nan_pot", None)
+    nan_raw = getattr(ea, "n_truth_nu_nan_raw", None)
+    zero_pot = getattr(ea, "n_truth_nu_zero_np_pot", None)
+    zero_raw = getattr(ea, "n_truth_nu_zero_np_raw", None)
+    note = ""
+    dropped = 0.0
+    if nan_pot is None:
+        note = "NaN-truth count unknown (old pickles); bin 0 may include them"
+    else:
+        n_pot[0] -= nan_pot
+        n_raw[0] -= nan_raw
+        dropped += nan_pot
+    if is_np:
+        if zero_pot is not None:
+            n_pot[0] -= zero_pot
+            n_raw[0] -= zero_raw
+            dropped += zero_pot
+        elif bins[0] <= 0 < bins[1]:
+            # old pickles: bin 0 can only hold 0-proton (or NaN) events -> drop it
+            dropped += max(n_pot[0], 0.0)
+            n_pot[0] = 0.0
+            n_raw[0] = 0.0
+            note = ""
+    n_pot = np.clip(n_pot, 0.0, None)
+    n_raw = np.clip(n_raw, 0.0, None)
+    return n_pot, n_raw, dropped, note
+
+
+# non-cross-section variables that also get a truth plot
+TRUTH_EXTRA_VARS = {"E_nu"}
+
+MCNU_TRUTH_PKL = path.join("pkl", "truth", "mcnu_truth_hists.pkl")
+
+
+def load_mcnu_truth(save_fig_dir: str):
+    """mcnu truth histograms written by truth_mcnu.py, or None if not there."""
+    p = path.join(save_fig_dir, MCNU_TRUTH_PKL)
+    if not path.isfile(p):
+        return None
+    with open(p, "rb") as f:
+        return pickle.load(f)
+
+
+def render_truth_signal_plots(merged: dict, save_fig_dir: str, pot_str: str,
+                              save_fig: bool, show_fig: bool, mc_scale: float = 1.0,
+                              mcnu_truth: dict | None = None, mc_pot: float = 0.0):
+    """True-value distribution of true-signal events before any selection cut.
+
+    MC-only (no data drawn), so the counts are shown at the simulated MC POT: the
+    data-POT scale ``mc_scale`` (``scale_mc`` from apply_global_exposure_scales) is
+    divided back out, and ``pot_str`` should be the MC POT label.
+
+    ``mcnu_truth`` (from ``truth_mcnu.build_mcnu_truth_hists``) adds a second line per
+    variable: generator-level true interactions with looser cuts (no thresholds). It is
+    rescaled from its own POT to ``mc_pot`` when both are known.
+
+    Same events and x axis as the efficiency denominator: reconstructed interactions
+    flagged as true signal at the first efficiency stage, histogrammed in
+    ``var_evt_truth_col``. Only cross-section variables (``response_matrix=True``). Events whose truth value is undefined (and 0-proton events
+    for the multiplicity) are left out.
+
+    A third line shows the same true variable for true-signal slices that pass the
+    full reco selection (the efficiency numerator at the last stage), so the gap to
+    the black line is the selection loss. Writes ``truth/truth-<var>`` plots plus
+    ``pkl/truth/truth_signal_counts.pkl`` with the arrays.
+    """
+    eff = merged.get("eff") or {}
+    stage_keys = merged.get("stage_keys") or []
+    first = next((k for k in stage_keys if k in eff), None)
+    last = next((k for k in reversed(stage_keys) if k in eff), None)
+    if first is None:
+        print("[aggregate] no efficiency data -> skipping truth signal plots")
+        return
+    var_lookup = {vc.var_save_name: vc for vc in EFFICIENCY_VARS}
+    out = {}
+    notes = set()
+    for var_save_name, ea in sorted(eff[first].items()):
+        var_config = var_lookup.get(var_save_name)
+        # cross-section variables (the ones unfolded with a response matrix), plus E_nu
+        if var_config is None or not (
+            getattr(var_config, "response_matrix", False)
+            or var_save_name in TRUTH_EXTRA_VARS
+        ):
+            continue
+        n_pot, n_raw, dropped, note = _truth_signal_counts(ea, var_config)
+        if mc_scale > 0 and mc_scale != 1.0:
+            n_pot = n_pot / mc_scale
+            dropped = dropped / mc_scale
+        if note:
+            notes.add(note)
+        if n_pot.sum() <= 0:
+            continue
+        bins = np.asarray(var_config.bins, dtype=float)
+        centers = 0.5 * (bins[:-1] + bins[1:])
+        err = np.divide(n_pot, np.sqrt(n_raw), out=np.zeros_like(n_pot), where=n_raw > 0)
+
+        fig, ax = plt.subplots()
+        ax.stairs(n_pot, bins, color="black", linewidth=1.5,
+                  label=f"True signal, before selection ({n_pot.sum():.1f})")
+        ax.errorbar(centers, n_pot, yerr=err, fmt="none", color="black", capsize=2)
+        y_top = float(np.max(n_pot + err))
+
+        # true signal passing the full selection (efficiency numerator, last stage)
+        sel = None
+        ea_last = (eff.get(last) or {}).get(var_save_name) if last and last != first else None
+        if ea_last is not None:
+            sel_pot = np.asarray(ea_last.n_signal_pot, dtype=float).copy()
+            sel_raw = np.asarray(ea_last.n_signal_raw, dtype=float).copy()
+            nan_pot = getattr(ea_last, "n_signal_nan_pot", None)
+            if nan_pot is not None:
+                sel_pot[0] -= nan_pot
+                sel_raw[0] -= getattr(ea_last, "n_signal_nan_raw", 0.0) or 0.0
+            else:
+                notes.add("selected-signal NaN-truth count unknown (old pickles); "
+                          "bin 0 of the after-selection line may include them")
+            sel_pot = np.clip(sel_pot, 0.0, None)
+            sel_raw = np.clip(sel_raw, 0.0, None)
+            if mc_scale > 0 and mc_scale != 1.0:
+                sel_pot = sel_pot / mc_scale
+            sel_err = np.divide(sel_pot, np.sqrt(sel_raw), out=np.zeros_like(sel_pot),
+                                where=sel_raw > 0)
+            ax.stairs(sel_pot, bins, color="tab:blue", linewidth=1.5,
+                      label=f"True signal, after selection ({sel_pot.sum():.1f})")
+            ax.errorbar(centers, sel_pot, yerr=sel_err, fmt="none", color="tab:blue", capsize=2)
+            sel = {"n_pot": sel_pot, "n_raw": sel_raw, "err": sel_err, "stage": last}
+
+        nu_entry = ((mcnu_truth or {}).get("vars") or {}).get(var_save_name)
+        if nu_entry is not None and np.allclose(nu_entry["bins"], bins):
+            nu_pot = float(mcnu_truth.get("pot") or 0.0)
+            sf = (mc_pot / nu_pot) if (mc_pot > 0 and nu_pot > 0) else 1.0
+            nu_counts = np.asarray(nu_entry["counts"], dtype=float) * sf
+            nu_err = np.sqrt(np.asarray(nu_entry["counts"], dtype=float)) * sf
+            ax.stairs(nu_counts, bins, color="tab:red", linewidth=1.5,
+                      label=f"{mcnu_truth.get('label', 'mcnu truth')} ({nu_counts.sum():.1f})")
+            ax.errorbar(centers, nu_counts, yerr=nu_err, fmt="none", color="tab:red", capsize=2)
+            y_top = max(y_top, float(np.max(nu_counts + nu_err)))
+        ax.set_xlabel(var_config.var_labels[2] or var_config.var_labels[0])
+        ax.set_ylabel(f"Events / Bin (POT={pot_str})")
+        ax.set_xlim(bins[0], bins[-1])
+        ax.set_ylim(0.0, y_top * 1.3)
+        ax.legend(loc="upper left", fontsize=9, frameon=False)
+        add_approval_text("internal", 0.98, 0.97, "right", fontsize=14)
+        fig.tight_layout()
+        _save_fig_and_pkl(fig, save_fig_dir, path.join("truth", f"truth-{var_save_name}"),
+                          save_fig, show_fig)
+
+        msg = f"[aggregate] truth {var_save_name}: {n_pot.sum():.2f} events"
+        if sel is not None:
+            msg += f", {sel['n_pot'].sum():.2f} after selection"
+        if dropped > 0:
+            msg += f", {dropped:.2f} with undefined truth / 0 protons left out"
+        print(msg, flush=True)
+        out[var_save_name] = {"bins": bins, "n_pot": n_pot, "n_raw": n_raw,
+                              "err": err, "n_dropped_pot": dropped, "selected": sel}
+    for note in sorted(notes):
+        print(f"[aggregate] truth plots WARN: {note}", flush=True)
+    if save_fig and out:
+        pkl_path = path.join(save_fig_dir, "pkl", "truth", "truth_signal_counts.pkl")
+        makedirs(path.dirname(pkl_path), exist_ok=True)
+        with open(pkl_path, "wb") as f:
+            pickle.dump({"pot_str": pot_str, "stage": first, "vars": out}, f)
+
+
 def render_efficiency_plots(merged: dict, save_fig_dir: str, pot_str: str,
                             save_fig: bool, show_fig: bool):
     """Reproduce ``plot_efficiency`` from the notebook using the eff accumulators.
@@ -872,7 +1068,7 @@ def render_efficiency_plots(merged: dict, save_fig_dir: str, pot_str: str,
 
 # ===========================================================================
 def render_cutflow_table(merged: dict, save_fig_dir: str, pot_str: str,
-                         save_fig: bool, show_fig: bool):
+                         save_fig: bool, show_fig: bool, mc_scale: float = 1.0):
     """Styled cutflow table — one row per selection stage.
 
     Columns: Selection | Step Eff. | Cum. Eff. | Purity
@@ -881,10 +1077,15 @@ def render_cutflow_table(merged: dict, save_fig_dir: str, pot_str: str,
       - Cum. Eff.  = signal at this stage / signal at the first (pre-cut) stage
       - Purity     = signal / all-topology total at this cumulative stage
 
-    Signal = topology categories 0 + 1 (Signal 1p + Signal Np).
-    All counts are POT-weighted (already scaled by apply_global_exposure_scales).
+    Signal = topology categories 0 + 1 (Signal 1p + Signal Np), or in pi0_sideband mode
+    topology categories 6 + 9 (νe CC γ: true νe CC 1eNp, no μ/π±, with photons; and NC) --
+    the π⁰-producing interactions the sideband targets.
+    MC-only, so counts are shown at the full simulated MC POT: the data-POT scale
+    ``mc_scale`` (``scale_mc`` from apply_global_exposure_scales) is divided back out,
+    and ``pot_str`` should be the MC POT label.
     """
     bar = merged["bar"]
+    unscale = (1.0 / mc_scale) if mc_scale > 0 else 1.0
     stage_keys   = merged.get("stage_keys", [])
     stage_labels = merged.get("stage_labels", [])
     label_lookup = dict(zip(stage_keys, stage_labels))
@@ -903,15 +1104,18 @@ def render_cutflow_table(merged: dict, save_fig_dir: str, pot_str: str,
             flush=True,
         )
 
+    sideband = stages_mod.SELECTION_MODE == "pi0_sideband"
+    sig_idx = [6, 9] if sideband else [0, 1]  # sideband: νe CC γ + NC
+
     # Pre-cut signal total (denominator for cumulative efficiency)
-    first_counts = np.asarray(bar[avail_stages[0]]["topology"].mc_counts, dtype=float)
-    sig_total = float(first_counts[0] + first_counts[1])
+    first_counts = np.asarray(bar[avail_stages[0]]["topology"].mc_counts, dtype=float) * unscale
+    sig_total = float(first_counts[sig_idx].sum())
 
     rows = []
     prev_sig = sig_total
     for stage_key in avail_stages:
-        counts   = np.asarray(bar[stage_key]["topology"].mc_counts, dtype=float)
-        cum_sig  = float(counts[0] + counts[1])
+        counts   = np.asarray(bar[stage_key]["topology"].mc_counts, dtype=float) * unscale
+        cum_sig  = float(counts[sig_idx].sum())
         cum_tot  = float(counts.sum())
 
         step_eff = cum_sig / prev_sig  if prev_sig  > 0 else 0.0
@@ -978,8 +1182,10 @@ def render_cutflow_table(merged: dict, save_fig_dir: str, pot_str: str,
             transform=ax.transAxes, ha="left",   va="bottom", fontweight="bold", fontsize=14)
     ax.text(x_right,  y_top + 0.02, pot_str,
             transform=ax.transAxes, ha="right",  va="bottom", fontsize=14)
-    ax.text(x_center, y_top + 0.12,
-            r"$\boldsymbol{\nu_e}$ CC $\boldsymbol{1eNp0\pi}$ Selection Cutflow",
+    title = (r"$\boldsymbol{\pi^0}$ Sideband Cutflow (Signal: $\nu_e$ CC $\gamma$ + NC)"
+             if sideband
+             else r"$\boldsymbol{\nu_e}$ CC $\boldsymbol{1eNp0\pi}$ Selection Cutflow")
+    ax.text(x_center, y_top + 0.12, title,
             transform=ax.transAxes, ha="center", va="bottom", fontsize=28, fontweight="bold")
 
     _save_fig_and_pkl(fig, save_fig_dir, "cutflow_table", save_fig, show_fig)
@@ -987,15 +1193,25 @@ def render_cutflow_table(merged: dict, save_fig_dir: str, pot_str: str,
 
 # ===========================================================================
 def render_breakdown_table(merged: dict, save_fig_dir: str, pot_str: str,
-                           save_fig: bool, show_fig: bool):
-    """Styled table of topology category counts at the final selection stage.
+                           save_fig: bool, show_fig: bool,
+                           breakdown_type: str = "topology",
+                           labels=None,
+                           title: str = "Background Breakdown",
+                           rel_name: str = "bkgd_breakdown_table",
+                           signal_idx=None,
+                           mc_scale: float = 1.0):
+    """Styled table of breakdown category counts at the final selection stage.
 
-    Rows: one per topology category (topology_labels order).
-    Columns: Category | Selected / Total | Efficiency | % of Selected
+    Rows: one per category of ``breakdown_type`` (``labels`` order; topology_labels by
+    default). Columns: Category | Selected / Total | Efficiency | % of Selected
+    If ``signal_idx`` (category indices that make up the signal) is given, two more columns
+    show each signal category's share of the signal before and after selection
+    ("-" for background rows) -- e.g. the GENIE-mode makeup of the cross-section signal.
 
     'Total' is the first available breakdown stage (pre-cut denominator).
     'Selected' is the last available breakdown stage (final selection).
-    Counts are POT-weighted (already scaled by apply_global_exposure_scales).
+    MC-only, so counts are shown at the full simulated MC POT (like the cutflow): the
+    data-POT scale ``mc_scale`` is divided back out, and ``pot_str`` should be the MC POT label.
     """
     bar = merged["bar"]
     stage_keys = merged["stage_keys"]
@@ -1005,27 +1221,44 @@ def render_breakdown_table(merged: dict, save_fig_dir: str, pot_str: str,
         print("[aggregate] no breakdown stages -> skipping breakdown table")
         return
 
-    bb_total    = bar[avail_stages[0]].get("topology")
-    bb_selected = bar[avail_stages[-1]].get("topology")
+    if labels is None:
+        labels = topology_labels
+    bb_total    = bar[avail_stages[0]].get(breakdown_type)
+    bb_selected = bar[avail_stages[-1]].get(breakdown_type)
     if bb_total is None or bb_selected is None:
-        print("[aggregate] no topology breakdown data -> skipping breakdown table")
+        print(f"[aggregate] no {breakdown_type} breakdown data -> skipping {rel_name}")
         return
 
-    totals_arr   = np.asarray(bb_total.mc_counts,    dtype=float)
-    selected_arr = np.asarray(bb_selected.mc_counts, dtype=float)
+    unscale = (1.0 / mc_scale) if mc_scale > 0 else 1.0
+    totals_arr   = np.asarray(bb_total.mc_counts,    dtype=float) * unscale
+    selected_arr = np.asarray(bb_selected.mc_counts, dtype=float) * unscale
     total_selected = float(selected_arr.sum())
+    sig = list(signal_idx) if signal_idx is not None else []
+    sig_total = float(totals_arr[sig].sum()) if sig else 0.0
+    sig_selected = float(selected_arr[sig].sum()) if sig else 0.0
 
     rows = []
-    for i, label in enumerate(topology_labels):
+    for i, label in enumerate(labels):
         tot = float(totals_arr[i])
         sel = float(selected_arr[i])
         eff  = sel / tot  if tot  > 0 else 0.0
         frac = sel / total_selected if total_selected > 0 else 0.0
-        rows.append([label, f"{sel:.1f} / {tot:.1f}", f"{eff:.1%}", f"{frac:.1%}"])
+        row = [label, f"{sel:.0f} / {tot:.0f}", f"{eff:.1%}"]
+        if sig:
+            if i in sig:
+                row.append(f"{(tot / sig_total if sig_total > 0 else 0.0):.1%}")
+                row.append(f"{(sel / sig_selected if sig_selected > 0 else 0.0):.1%}")
+            else:
+                row += ["–", "–"]
+        row.append(f"{frac:.1%}")
+        rows.append(row)
 
-    col_labels = ["Category", "Selected / Total", "Efficiency", "% of Selected"]
+    col_labels = ["Category", "Selected / Total", "Efficiency"]
+    if sig:
+        col_labels += ["% of Signal (Total)", "% of Signal (Sel.)"]
+    col_labels.append("% of Selected")
 
-    fig, ax = plt.subplots(figsize=(14, len(rows) * 0.55 + 1.5))
+    fig, ax = plt.subplots(figsize=(14 + 3.5 * bool(sig), len(rows) * 0.55 + 1.5))
     ax.axis("off")
 
     table = ax.table(cellText=rows, colLabels=col_labels, cellLoc="center", loc="center")
@@ -1080,10 +1313,10 @@ def render_breakdown_table(merged: dict, save_fig_dir: str, pot_str: str,
     ax.text(x_right,  y_top + 0.02, pot_str,
             transform=ax.transAxes, ha="right",  va="bottom", fontsize=12)
     ax.text(x_center, y_top + 0.10,
-            r"Background Breakdown — " + (last_label or avail_stages[-1]),
+            title + " — " + (last_label or avail_stages[-1]),
             transform=ax.transAxes, ha="center", va="bottom", fontsize=20, fontweight="bold")
 
-    _save_fig_and_pkl(fig, save_fig_dir, "bkgd_breakdown_table", save_fig, show_fig)
+    _save_fig_and_pkl(fig, save_fig_dir, rel_name, save_fig, show_fig)
 
 
 # ===========================================================================
@@ -1212,10 +1445,32 @@ def aggregate_and_render(
         )
         render_efficiency_plots(merged, save_fig_dir, pot_str,
                                 save_fig=save_fig, show_fig=show_fig)
-        render_cutflow_table(merged, save_fig_dir, pot_str,
-                             save_fig=save_fig, show_fig=show_fig)
-        render_breakdown_table(merged, save_fig_dir, pot_str,
-                               save_fig=save_fig, show_fig=show_fig)
+        # truth plots are MC-only: show them at the simulated POT, not scaled to data.
+        # Overlays the mcnu truth line if truth_mcnu.py has written its pickle.
+        mcnu_truth = load_mcnu_truth(save_fig_dir)
+        render_truth_signal_plots(
+            merged, save_fig_dir,
+            get_pot_str(totals.mc_pot) if totals.mc_pot > 0 else pot_str,
+            save_fig=save_fig, show_fig=show_fig,
+            mc_scale=(exposure_scales or {}).get("scale_mc", 1.0),
+            mcnu_truth=mcnu_truth, mc_pot=totals.mc_pot,
+        )
+        # cutflow is MC-only: show it at the simulated POT, not scaled to data
+        render_cutflow_table(merged, save_fig_dir,
+                             get_pot_str(totals.mc_pot) if totals.mc_pot > 0 else pot_str,
+                             save_fig=save_fig, show_fig=show_fig,
+                             mc_scale=(exposure_scales or {}).get("scale_mc", 1.0))
+        # breakdown tables are MC-only too: simulated POT, not scaled to data
+        mc_pot_str = get_pot_str(totals.mc_pot) if totals.mc_pot > 0 else pot_str
+        mc_scale = (exposure_scales or {}).get("scale_mc", 1.0)
+        render_breakdown_table(merged, save_fig_dir, mc_pot_str,
+                               save_fig=save_fig, show_fig=show_fig, mc_scale=mc_scale)
+        render_breakdown_table(merged, save_fig_dir, mc_pot_str,
+                               save_fig=save_fig, show_fig=show_fig,
+                               breakdown_type="genie", labels=genie_mode_labels,
+                               title="GENIE Interaction Mode Breakdown",
+                               rel_name="genie_mode_table", signal_idx=range(5),
+                               mc_scale=mc_scale)
 
     # save the merged dict so downstream stuff can pull histdata directly
     merged_payload = {
@@ -1237,8 +1492,30 @@ def aggregate_and_render(
     return merged_payload
 
 
+def _detect_selection_mode(in_dir: str) -> str:
+    """Selection mode recorded in the batch pickles' meta (pre-mode pickles -> "signal").
+    Exits if the pickles disagree."""
+    modes = set()
+    for cf in sorted(glob.glob(path.join(in_dir, "*__*.pkl"))):
+        with open(cf, "rb") as f:
+            d = pickle.load(f)
+        modes.add((d.get("meta", {}) or {}).get("selection_mode", "signal"))
+    if len(modes) > 1:
+        sys.exit(f"[aggregate] batch pickles in {in_dir} mix selection modes {sorted(modes)}")
+    return modes.pop() if modes else "signal"
+
+
 def main():
     args = parse_args()
+
+    # Must happen before anything calls build_pipeline(): the stage list (and the plot
+    # keys the aggregator looks up) depends on the selection mode.
+    pickle_mode = _detect_selection_mode(args.in_dir)
+    if args.selection is not None and args.selection != pickle_mode:
+        sys.exit(f"[aggregate] --selection {args.selection} but the batch pickles were made "
+                 f"with selection '{pickle_mode}'")
+    stages_mod.set_selection_mode(pickle_mode)
+    print(f"[aggregate] selection mode: {pickle_mode}", flush=True)
 
     if args.work_base and not args.skip_completeness_check:
         from analysis_village.nueNp0Pi.event_selection import build_event_selection_pipeline
@@ -1260,6 +1537,8 @@ def main():
             print(f"[aggregate] WARN: completeness check skipped ({exc})", flush=True)
 
     try:
+        if args.no_syst:
+            os.environ["NUMUCC_SYST_DISK_ROOT"] = ""
         aggregate_and_render(
             args.in_dir,
             args.out_dir,

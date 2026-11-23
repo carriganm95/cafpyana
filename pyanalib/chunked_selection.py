@@ -627,6 +627,23 @@ class EfficiencyAccumulator:
     n_at_stage_int: float = 0.0     # total events (any topology) POT-weighted (evt)
     n_at_stage_int_raw: float = 0.0  # raw event count at stage (notebook parity)
     n_total_truth_nu_int: float = 0.0  # denominator integral from fill_denominator_from_first_stage_evt
+    # Denominator events folded into bin 0 by fill_denominator_from_first_stage_evt that
+    # have no defined truth value (NaN), and -- for the proton-multiplicity variable only --
+    # events whose true proton count is 0. Kept so truth-only plots can leave them out.
+    # None = unknown (pickles written before these fields existed).
+    n_truth_nu_nan_pot: Optional[float] = None
+    n_truth_nu_nan_raw: Optional[float] = None
+    n_truth_nu_zero_np_pot: Optional[float] = None
+    n_truth_nu_zero_np_raw: Optional[float] = None
+    # Same idea for the numerator: selected signal slices with no defined truth value
+    # (folded into bin 0 by fill_numerator_from_evt). None = unknown (older pickles).
+    n_signal_nan_pot: Optional[float] = None
+    n_signal_nan_raw: Optional[float] = None
+
+    _OPT_POT_FIELDS = ("n_truth_nu_nan_pot", "n_truth_nu_zero_np_pot", "n_signal_nan_pot")
+    _OPT_FIELDS = ("n_signal_nan_pot", "n_signal_nan_raw",
+                   "n_truth_nu_nan_pot", "n_truth_nu_nan_raw",
+                   "n_truth_nu_zero_np_pot", "n_truth_nu_zero_np_raw")
 
     @classmethod
     def empty(cls, var_config) -> "EfficiencyAccumulator":
@@ -638,6 +655,12 @@ class EfficiencyAccumulator:
             n_signal_raw=np.zeros(n_bin),
             n_truth_nu_pot=np.zeros(n_bin),
             n_truth_nu_raw=np.zeros(n_bin),
+            n_truth_nu_nan_pot=0.0,
+            n_truth_nu_nan_raw=0.0,
+            n_truth_nu_zero_np_pot=0.0,
+            n_truth_nu_zero_np_raw=0.0,
+            n_signal_nan_pot=0.0,
+            n_signal_nan_raw=0.0,
         )
 
     def fill_denominator_from_mcnu(self, mcnu_df, var_config, signal_mask_fn: Callable):
@@ -718,6 +741,15 @@ class EfficiencyAccumulator:
             h_pot[0] += n_nan_pot
         self.n_truth_nu_pot += h_pot
         self.n_truth_nu_raw += h_raw
+        # Book-keeping for truth-only plots (does not change the histograms above).
+        if self.n_truth_nu_nan_pot is not None:
+            self.n_truth_nu_nan_pot += max(n_nan_pot, 0.0)
+            self.n_truth_nu_nan_raw += max(n_nan_raw, 0)
+        if self.n_truth_nu_zero_np_pot is not None and truth_col[2] == "proton_count_true":
+            vals = np.asarray(sig_df.loc[:, multicol_resolve_column_key(sig_df, truth_col)], dtype=float)
+            zero = vals == 0
+            self.n_truth_nu_zero_np_pot += float(sig_w[zero].sum())
+            self.n_truth_nu_zero_np_raw += int(zero.sum())
 
     def fill_numerator_from_evt(self, evt_df, var_config, signal_mask_evt, prefer_truth_col: bool = False):
         """Signal spectrum on reco slices × truth-on-slice column.
@@ -766,6 +798,9 @@ class EfficiencyAccumulator:
             n_nan_pot = float(sig_w.sum()) - float(h_pot.sum())
             if n_nan_pot > 0.0:
                 h_pot[0] += n_nan_pot
+            if self.n_signal_nan_pot is not None:
+                self.n_signal_nan_pot += max(n_nan_pot, 0.0)
+                self.n_signal_nan_raw += max(n_nan_raw, 0)
         self.n_signal_pot += h_pot
         self.n_signal_raw += h_raw
         self.n_total_signal_int += float(sig_w.sum())
@@ -782,6 +817,9 @@ class EfficiencyAccumulator:
         self.n_total_signal_int *= factor
         self.n_total_truth_nu_int *= factor
         self.n_at_stage_int *= factor
+        for name in self._OPT_POT_FIELDS:
+            if getattr(self, name, None) is not None:
+                setattr(self, name, getattr(self, name) * factor)
         return self
 
     def __iadd__(self, other: "EfficiencyAccumulator"):
@@ -796,6 +834,9 @@ class EfficiencyAccumulator:
         self.n_total_truth_nu_int += other.n_total_truth_nu_int
         self.n_at_stage_int += other.n_at_stage_int
         self.n_at_stage_int_raw += other.n_at_stage_int_raw
+        for name in self._OPT_FIELDS:
+            a, b = getattr(self, name, None), getattr(other, name, None)
+            setattr(self, name, None if (a is None or b is None) else a + b)
         return self
 
 
@@ -1308,6 +1349,12 @@ def merge_samples(samples: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
                         n_total_truth_nu_int=getattr(ea, "n_total_truth_nu_int", 0.0),
                         n_at_stage_int=ea.n_at_stage_int,
                         n_at_stage_int_raw=getattr(ea, "n_at_stage_int_raw", 0.0),
+                        n_truth_nu_nan_pot=getattr(ea, "n_truth_nu_nan_pot", None),
+                        n_truth_nu_nan_raw=getattr(ea, "n_truth_nu_nan_raw", None),
+                        n_truth_nu_zero_np_pot=getattr(ea, "n_truth_nu_zero_np_pot", None),
+                        n_truth_nu_zero_np_raw=getattr(ea, "n_truth_nu_zero_np_raw", None),
+                        n_signal_nan_pot=getattr(ea, "n_signal_nan_pot", None),
+                        n_signal_nan_raw=getattr(ea, "n_signal_nan_raw", None),
                     )
 
     # Assume stage_keys/labels are the same across samples (they should be: same pipeline)

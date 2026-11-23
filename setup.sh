@@ -42,6 +42,10 @@ spack load xrootd@5.6.9%gcc@12.5.0 arch=linux-almalinux9-x86_64_v2
 # this sets Python to 3.10.16
 spack load root arch=linux-almalinux9-x86_64_v2
 
+#spack load hdf5/bnmkgjf
+#spack load xrootd/wrvy2k7
+#spack load root/vgs6mjs
+
 # EAF has different library needs
 EAF=0
 if [[ $machine == *jupyter* ]]; then
@@ -159,5 +163,10 @@ export PYTHONPATH=${CAFPYANA_DIR}:${PYTHONPATH}
 _site=${VENV_DIR}/lib/python3.10/site-packages
 export LD_LIBRARY_PATH=${_site}/pyxrootd:${_site}/xrootd.libs:${LD_LIBRARY_PATH}
 export CAFPYANA_WD=${CAFPYANA_DIR}
+
+# Input .df files staged to pnfs/persistent so grid workers can ifdh cp them.
+# Override by setting these before sourcing setup.sh if you want to use a different location.
+export SPRING_GEN1_ROOT=${SPRING_GEN1_ROOT:-/pnfs/sbnd/persistent/users/micarrig/nueNp0Pi/selection_v3}
+export DATA_GEN1_ROOT=${DATA_GEN1_ROOT:-/pnfs/sbnd/persistent/users/micarrig/nueNp0Pi/selection_data_v1}
 
 htgettoken -a htvaultprod.fnal.gov -i sbnd

@@ -36,6 +36,7 @@ from analysis_village.nueNp0Pi.config.settings import (
     DETECTOR, PER_TPC_INCATHODE_CM,
     ELE_SOFTMAX_TH, ELE_PRIMARY_TH, P_SOFTMAX_TH, ELE_VTXDIST_TH, ELE_DEDX_TH,
     ELE_KE_TH, P_KE_TH, MU_KE_TH, PI_KE_TH, GAM_KE_TH,
+    PI0_LEAD_GAM_KE_TH, PI0_SUB_GAM_KE_TH,
 )
 from pyanalib.chunked_selection import multicol_resolve_column_key
 
@@ -343,28 +344,32 @@ def get_genie_category_spine(df, ret_cuts=False, print_summary=False):
     mode = df.rec.dlp_true.interaction_mode
     iscc = df.rec.dlp_true.cc_mask == True
     isnu = df.rec.dlp_true.nu_id >= 0
-
+    # nueNp0Pi signal from the SPINE truth flags (same as the topology breakdown).
+    # The mc.* multiplicity columns used by IsNuInFV_NueCC_1p0pi are all 0 on reco slices.
+    nue_signal = (df.rec.dlp_true.true_signal1p == 1) | (df.rec.dlp_true.true_signalNp == 1)
     good_nu = isnu & iscc
 
     genie_categ = pd.Series(10, index=df.index)
-    genie_categ[good_nu & (mode == 0)] = 0  # QE
-    genie_categ[good_nu & (mode == 1)] = 1  # RES
-    genie_categ[good_nu & (mode == 2)] = 2  # DIS
-    genie_categ[good_nu & (mode == 10)] = 3  # MEC
-    genie_categ[good_nu & ((mode != 0) & (mode != 1) & (mode != 2) & (mode != 10))] = 4  # Other
-    genie_categ[isnu & ~iscc] = -1
-    genie_categ[~isnu] = -2
+    genie_categ[good_nu & (mode == 0) & nue_signal] = 0  # QE
+    genie_categ[good_nu & (mode == 1) & nue_signal] = 1  # RES
+    genie_categ[good_nu & (mode == 2) & nue_signal] = 2  # DIS
+    genie_categ[good_nu & (mode == 10) & nue_signal] = 3  # MEC
+    genie_categ[good_nu & ((mode != 0) & (mode != 1) & (mode != 2) & (mode != 10)) & nue_signal] = 4  # Other
+    genie_categ[good_nu & ~nue_signal] = 5  # non-signal CC
+    genie_categ[isnu & ~iscc] = -1 # NC
+    genie_categ[~isnu] = -2 # Cosmic
 
     if ret_cuts:
         cc_other = good_nu & ~(mode == 0) & ~(mode == 1) & ~(mode == 2) & ~(mode == 10)
         return [
-            good_nu & (mode == 0),   # 0: QE
-            good_nu & (mode == 1),   # 1: RES
-            good_nu & (mode == 2),   # 2: DIS
-            good_nu & (mode == 10),  # 3: MEC
-            cc_other,                # 4: Other CC
-            isnu & ~iscc,            # 5: NC
-            ~isnu,                   # 6: Cosmic
+            good_nu & (mode == 0)  & nue_signal,  # 0: QE
+            good_nu & (mode == 1)  & nue_signal,  # 1: RES
+            good_nu & (mode == 2)  & nue_signal,  # 2: DIS
+            good_nu & (mode == 10) & nue_signal,  # 3: MEC
+            cc_other               & nue_signal,  # 4: Other CC
+            good_nu & ~nue_signal,                # 5: non-signal CC
+            isnu & ~iscc,                         # 6: NC
+            ~isnu,                                # 7: Cosmic
         ]
 
     return genie_categ
@@ -444,6 +449,13 @@ def electron_vertex_distance(df, th=ELE_VTXDIST_TH):
 
 def electron_dedx(df, th=ELE_DEDX_TH):
     return df[df.rec.dlp.ele_dedx_reco < th]
+
+# pi0 sideband cuts (same thresholds as makedf/make_nueccdf.py:_apply_pi0_sideband_cuts)
+def pi0_lead_photon(df, th=PI0_LEAD_GAM_KE_TH):
+    return df[df.rec.dlp.photon_energy_reco > th]
+
+def pi0_sub_photon(df, th=PI0_SUB_GAM_KE_TH):
+    return df[df.rec.dlp.subprim_photon_energy_reco > th]
 
 
 

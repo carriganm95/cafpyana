@@ -6,18 +6,26 @@ DFPREFIX=$2
 nProcess=$PROCESS
 echo "@@ nProcess : "${nProcess}
 
-source /cvmfs/larsoft.opensciencegrid.org/spack-fnal-v1.0.0/setup-env.sh
+# spack-fnal-v1.0.0's spack tool broke on 2026-10-27 (empty lib/spack); v1.1.1 resolves
+# the same hdf5/xrootd/root builds (same hashes as setup.sh). Python is 3.10.16.
+source /cvmfs/larsoft.opensciencegrid.org/spack-fnal-v1.1.1/setup-env.sh
 
 echo "@@ ls -alh"
 ls -alh
 
-spack load cmake@3.31.8
-spack load ifdhc@2.8.0
+spack load cmake/rencrd2 || true
+spack load hdf5/bnmkgjf
+spack load xrootd/wrvy2k7
+spack load root/vgs6mjs
 
-spack load hdf5@1.12.2%gcc@12.5.0 arch=linux-almalinux9-x86_64_v2
-spack load xrootd@5.6.9%gcc@12.5.0 arch=linux-almalinux9-x86_64_v2
-# this sets Python to 3.10.16
-spack load root arch=linux-almalinux9-x86_64_v2
+# ifdh: v1.1.1 only has x86_64_v3 ifdhc builds, so use the EL9 x86_64_v2 build from
+# the Fermilab common area directly.
+_FC=/cvmfs/fermilab.opensciencegrid.org/packages/common
+_IFDHC=${_FC}/ifdhc/2.8.0/linux-almalinux9-x86_64_v2-gcc-11.4.1-6u3yv5pf5euibfyxqjrnxptk65m3zfu7
+export IFDHC_CONFIG_DIR=${_FC}/ifdhc-config/2.8.0/linux-almalinux9-x86_64_v2-gcc-11.4.1-pm3ua2jppmteolvjpfuuypy4dr6funfx
+export PATH=${_IFDHC}/bin:${IFDHC_CONFIG_DIR}/bin:${PATH}
+export LD_LIBRARY_PATH=${_IFDHC}/lib:${LD_LIBRARY_PATH}
+echo "@@ python: $(which python) $(python --version 2>&1)  ifdh: $(which ifdh)"
 
 thisOutputCreationDir=`pwd`
 filesFromSender=${CONDOR_DIR_INPUT}/bin_dir/
@@ -51,6 +59,7 @@ ls envs/venv_py310_cafpyana/lib/python3.10
 ls envs/venv_py310_cafpyana/lib/python3.10/site-packages/
 cp -r ${filesFromSender}/XRootD $VIRTUAL_ENV/lib/python3.10/site-packages/
 cp -r ${filesFromSender}/pyxrootd $VIRTUAL_ENV/lib/python3.10/site-packages/
+cp -r ${filesFromSender}/xrootd.libs $VIRTUAL_ENV/lib/python3.10/site-packages/
 
 export IFDH_CP_MAXRETRIES=2
 
@@ -78,6 +87,6 @@ if [ -f "$outFILE" ]; then
   ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${nProcess}.log
   echo "@@ Done!"
 else
-  ifdh cp ${thisOutputCreationDir}/log_${nProcess}.log ${outDir}/log_${nProcess}.log
+  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${nProcess}.log
   echo "File not exist"
 fi
