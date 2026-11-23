@@ -96,6 +96,7 @@ class VariableConfig:
         response_matrix=False,
         response_matrix_bins=None,
         response_matrix_label=None,
+        uses_truth=None,
     ):
         self.var_save_name = var_save_name
         self.var_plot_name = var_plot_name
@@ -120,3 +121,23 @@ class VariableConfig:
         self.response_matrix = response_matrix
         self.response_matrix_bins = response_matrix_bins
         self.response_matrix_label = response_matrix_label
+        # Plots built from truth info (reco-minus-true diffs/resolutions, true-level
+        # columns, Reco/True ratios) have no data counterpart, so data is not drawn.
+        # None -> infer from the variable's name/columns/ratio_mode.
+        if uses_truth is None:
+            uses_truth = (
+                var_save_name.endswith(("-diff", "-res"))
+                or (len(var_evt_reco_col) > 0 and var_evt_reco_col[0] == "mc")
+                or ratio_mode == "reco_true"
+            )
+        self.uses_truth = bool(uses_truth)
+
+    def with_bins(self, bins) -> "VariableConfig":
+        """Return a copy of this config that uses ``bins`` (e.g. N-1 plots that need room
+        below/above the usual range for events the held-out cut would remove)."""
+        import copy
+        import numpy as np
+        new = copy.copy(self)
+        new.bins = np.asarray(bins, dtype=float)
+        new.bin_centers = (new.bins[:-1] + new.bins[1:]) / 2.
+        return new

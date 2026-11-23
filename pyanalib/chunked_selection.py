@@ -992,7 +992,12 @@ class ChunkRunner:
         mc_univ_syst_tags: Optional[Tuple[str, ...]] = None,
         bar_breakdown_types: Tuple[str, ...] = ("topology", "genie"),
         efficiency_denom_from_first_stage: bool = False,
+        fill_stage_keys: Optional[Sequence[str]] = None,
     ):
+        """``fill_stage_keys``: if given, only these stages fill histograms / bar
+        breakdowns / efficiency accumulators; every stage's cut still runs. Used to split
+        one pipeline across a skim: the stages up to the skim cut are filled while making
+        the skim, and the rest when running over it. ``None`` fills every stage."""
         if sample not in {"mc", "data", "intime", "dirt", "offbeam"}:
             raise ValueError(f"unknown sample: {sample!r}")
         self.sample = sample
@@ -1003,6 +1008,10 @@ class ChunkRunner:
         self.mc_univ_syst_tags = mc_univ_syst_tags
         self.bar_breakdown_types = bar_breakdown_types
         self.efficiency_denom_from_first_stage = efficiency_denom_from_first_stage
+        self.fill_stage_keys = None if fill_stage_keys is None else set(fill_stage_keys)
+        unknown = (self.fill_stage_keys or set()) - {s.key for s in stages}
+        if unknown:
+            raise ValueError(f"fill_stage_keys has unknown stage keys: {sorted(unknown)}")
         self._first_eff_stage_key = next(
             (s.key for s in stages if s.save_for_efficiency), None
         )
@@ -1137,6 +1146,8 @@ class ChunkRunner:
         traces go to this module's logger at DEBUG level instead of nowhere -- set
         ``CAFPYANA_LOG_LEVEL=DEBUG`` (see ``pyanalib.logging_utils``) to see them,
         no need to wire a callback by hand.
+
+        Returns the state after the last stage's cut (e.g. the surviving ``evt`` rows).
         """
         def _tr(msg: str) -> None:
             if pipeline_trace is not None:
@@ -1169,6 +1180,9 @@ class ChunkRunner:
                 ne = len(state["evt"]) if state.get("evt") is not None else 0
                 nt = len(state["trk"]) if state.get("trk") is not None else 0
                 _tr(f"[pipeline]     after cut: len(evt)={ne} len(trk)={nt}")
+            if self.fill_stage_keys is not None and stage.key not in self.fill_stage_keys:
+                _tr(f"[pipeline] <<< stage={stage.key!r} cut only (not filled here)")
+                continue
             for j, ps in enumerate(stage.plots):
                 pk = self.plot_key(stage.key, ps)
                 _tr(f"[pipeline]     histogram plot {j + 1}/{len(stage.plots)} → {pk}")
@@ -1177,12 +1191,17 @@ class ChunkRunner:
                 _tr(f"[pipeline]     bar breakdown …")
                 self._fill_breakdown(stage.key, state)
             if stage.save_for_efficiency:
-                if self.sample == "mc" and state.get("mcnu") is None:
+                # mcnu is only needed when the denominator comes from it; in
+                # first-stage-denominator mode (e.g. when running over a skim, which has
+                # no mcnu) the evt rows are enough.
+                if (self.sample == "mc" and state.get("mcnu") is None
+                        and not self.efficiency_denom_from_first_stage):
                     _tr("[pipeline]     efficiency accumulators skipped (no mcnu in state)")
                 else:
                     _tr(f"[pipeline]     efficiency accumulators …")
                     self._fill_efficiency(stage.key, state)
             _tr(f"[pipeline] <<< stage={stage.key!r} finished")
+        return state
 
     # -------- save/load -------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:

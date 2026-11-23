@@ -30,6 +30,14 @@ echo "@@ python: $(which python) $(python --version 2>&1)  ifdh: $(which ifdh)"
 thisOutputCreationDir=`pwd`
 filesFromSender=${CONDOR_DIR_INPUT}/bin_dir/
 
+# A -resubmit_missing submission renumbers its jobs 0..M-1; process_map.txt maps each one
+# back to the original job index K, so the output keeps its original name <prefix>_K.df.
+outIdx=${nProcess}
+if [ -f ${filesFromSender}/process_map.txt ]; then
+  outIdx=$(sed -n "$((nProcess + 1))p" ${filesFromSender}/process_map.txt)
+fi
+echo "@@ output index : ${outIdx}"
+
 echo "@@ copy cafpyana.tar.gz and extract"
 cp ${filesFromSender}/cafpyana.tar.gz ./
 mkdir cafpyana
@@ -76,17 +84,17 @@ ls -ltr
 
 echo "@@ print log"
 more log_${nProcess}.log
-echo "@@ Check output : ${DFPREFIX}_${nProcess}.df"
-ls -alh ${DFPREFIX}_${nProcess}.df
+echo "@@ Check output : ${DFPREFIX}_${outIdx}.df"
+ls -alh ${DFPREFIX}_${outIdx}.df
 
-outFILE=${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${nProcess}.df
+outFILE=${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df
 if [ -f "$outFILE" ]; then
-  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${nProcess}.df ${outDir}/${DFPREFIX}_${nProcess}.df"
-  ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${nProcess}.df ${outDir}/${DFPREFIX}_${nProcess}.df
-  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${nProcess}.log"
-  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${nProcess}.log
+  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df ${outDir}/${DFPREFIX}_${outIdx}.df"
+  ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df ${outDir}/${DFPREFIX}_${outIdx}.df
+  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log"
+  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log
   echo "@@ Done!"
 else
-  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${nProcess}.log
+  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log
   echo "File not exist"
 fi

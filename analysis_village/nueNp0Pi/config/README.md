@@ -62,7 +62,8 @@ path-computation logic** (that lives in `../dataset_paths.py`).
 
 - `FLUX_FILE` — absolute path to the flux input ROOT file (env var `NUENP0PI_FLUX_FILE`).
 - `SPRING_GEN1_ROOT` / `SPRING_GEN1_ROOT_EAF` — base directory `.df` files are globbed from
-  (env var `NUMUCC_SPRING_GEN1_ROOT` — see the historical-naming note below).
+  (env var `SPRING_GEN1_ROOT`; the historical `NUMUCC_SPRING_GEN1_ROOT` is still accepted —
+  see the historical-naming note below). Data: `DATA_GEN1_ROOT` (env var of the same name).
 - `PLOTS_BASE` — base output directory for plots (env var `NUMUCC_PLOTS_BASE`).
 - `EVENT_SELECTION_GLOBS` — one glob pattern per sample (`mc`, `data`, `intime`, `offbeam`,
   `dirt`) for the main batched event-selection pipeline. **This is the one you'll edit most

@@ -114,6 +114,7 @@ class ChunkRunner(_BaseChunkRunner):
         signal_mask_fn=None,
         bar_breakdown_types=("topology", "genie"),
         efficiency_denom_from_first_stage=True,
+        fill_stage_keys=None,
     ):
         super().__init__(
             sample=sample,
@@ -124,12 +125,15 @@ class ChunkRunner(_BaseChunkRunner):
             mc_univ_syst_tags=mc_univ_syst_tags,
             bar_breakdown_types=bar_breakdown_types,
             efficiency_denom_from_first_stage=efficiency_denom_from_first_stage,
+            fill_stage_keys=fill_stage_keys,
         )
 
 
 def build_runner(
     sample: str,
     mc_univ_syst_tags: tuple[str, ...] | None = None,
+    stages=None,
+    fill_stage_keys=None,
 ) -> ChunkRunner:
     """Build a ChunkRunner instance for a given sample.
 
@@ -154,9 +158,10 @@ def build_runner(
     )
     return ChunkRunner(
         sample=sample,
-        stages=build_pipeline(),
+        stages=build_pipeline() if stages is None else stages,
         efficiency_vars=efficiency_vars,
         mc_univ_syst_tags=mc_univ_syst_tags,
+        fill_stage_keys=fill_stage_keys,
     )
 
 
@@ -348,6 +353,36 @@ def ensure_phi_and_kinematics_cols(
     return evt_df, mcnu_df
 
 
+def load_prepared_file(
+    df_file: str,
+    sample: str,
+    keys_load: Sequence[str],
+    *,
+    use_mc_genweight: bool = False,
+    max_splits_per_file: int | None = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None]:
+    """Load one ``.df`` file and prepare it for the pipeline: attach ``pot_weight``,
+    re-match the ``mc.*`` truth columns (MC), and add derived kinematics columns.
+
+    Returns ``(evt, trk, hdr, mcnu)``; ``mcnu`` is None unless ``"mcnu"`` is in ``keys_load``.
+    """
+    n_splits = get_n_split(df_file)
+    cap = n_splits if max_splits_per_file is None else min(n_splits, max_splits_per_file)
+    file_dfs = load_dfs(df_file, list(keys_load), n_max_concat=cap)
+    logger.debug(f"Keys available in {df_file}: {list(file_dfs.keys())}")
+
+    evt_df = file_dfs["evt"]
+    trk_df = file_dfs["trk"]
+    hdr_df = file_dfs.get("hdr")
+    mcnu_df = file_dfs.get("mcnu") if "mcnu" in keys_load else None
+
+    attach_intrinsic_weights(evt_df, trk_df, sample, use_mc_genweight)
+    if sample == "mc":
+        evt_df = rematch_mc_columns(evt_df, mcnu_df)
+    evt_df, mcnu_df = ensure_phi_and_kinematics_cols(evt_df, trk_df, mcnu_df)
+    return evt_df, trk_df, hdr_df, mcnu_df
+
+
 def run_batch_selection(
     sample: str,
     df_files: Sequence[str],
@@ -414,12 +449,10 @@ def run_batch_selection_modes(
     n_evt_total = 0
 
     for df_file in df_files:
-        n_splits = get_n_split(df_file)
-        cap = n_splits if max_splits_per_file is None else min(n_splits, max_splits_per_file)
-        file_keys = keys_load
-        file_dfs = load_dfs(df_file, file_keys, n_max_concat=cap)
-
-        hdr_df = file_dfs.get("hdr")
+        evt_df, trk_df, hdr_df, mcnu_df = load_prepared_file(
+            df_file, sample, keys_load, use_mc_genweight=use_mc_genweight,
+            max_splits_per_file=max_splits_per_file,
+        )
         per_file_meta.append(file_hdr_meta(sample, hdr_df, df_file))
         accumulate_hdr_meta(
             sample,
@@ -429,17 +462,6 @@ def run_batch_selection_modes(
             chunk_cosmic_gates_intime,
             chunk_cosmic_gates_offbeam,
         )
-
-        logger.debug(f"Keys available in {df_file}: {list(file_dfs.keys())}")
-
-        evt_df = file_dfs["evt"]
-        trk_df = file_dfs["trk"]
-        mcnu_df = file_dfs.get("mcnu") if load_mcnu else None
-
-        attach_intrinsic_weights(evt_df, trk_df, sample, use_mc_genweight)
-        if sample == "mc":
-            evt_df = rematch_mc_columns(evt_df, mcnu_df)
-        evt_df, mcnu_df = ensure_phi_and_kinematics_cols(evt_df, trk_df, mcnu_df)
         n_evt_total += int(len(evt_df))
 
         for runner in runners.values():
@@ -448,7 +470,7 @@ def run_batch_selection_modes(
                 pipeline_trace=pipeline_trace,
             )
 
-        del file_dfs, evt_df, trk_df, hdr_df, mcnu_df
+        del evt_df, trk_df, hdr_df, mcnu_df
         gc.collect()
 
     meta = {

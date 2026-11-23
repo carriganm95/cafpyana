@@ -12,6 +12,7 @@ ipywidgets
 dill
 h5py
 tables
+pyarrow
 emcee
 corner
 lz4

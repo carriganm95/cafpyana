@@ -78,7 +78,9 @@ ifdh cp log_${nProcess}.log ${outDir}/../map_logs/log_${nProcess}.log 2>/dev/nul
   ifdh mkdir_p ${outDir}/../map_logs && ifdh cp log_${nProcess}.log ${outDir}/../map_logs/log_${nProcess}.log
 
 shopt -s nullglob
-outFILES=(${thisOutputCreationDir}/cafpyana/out/*.pkl)
+# -skim jobs also write Parquet parts; copy them before the .pkl so that a pickle on
+# pnfs implies its parts made it too (the loop exits on the first failed copy).
+outFILES=(${thisOutputCreationDir}/cafpyana/out/*.parquet ${thisOutputCreationDir}/cafpyana/out/*.pkl)
 if [ ${#outFILES[@]} -gt 0 ]; then
   for f in "${outFILES[@]}"; do
     dest=${outDir}/$(basename ${f})

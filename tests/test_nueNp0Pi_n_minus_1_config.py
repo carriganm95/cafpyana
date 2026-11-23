@@ -40,10 +40,17 @@ def _n1_plots(stages):
     return [ps for ps in stages[-1].plots if (ps.name_suffix or "").startswith("n_minus_1_")]
 
 
-def test_default_n_minus_1_stage_keys_is_empty_and_adds_no_plots():
-    """Off by default -- no N_MINUS_1_STAGE_KEYS populated -> build_pipeline() attaches
-    nothing extra (matches the module docstring: opt-in, unlike EVT_BREAKDOWN_VARS)."""
-    assert stages_mod.N_MINUS_1_STAGE_KEYS == ()
+def test_default_n_minus_1_plots_cover_every_signal_threshold_cut():
+    """On by default (so grid jobs, which can't take notebook overrides, make them):
+    one N-1 plot per default held-out cut in the signal pipeline."""
+    assert stages_mod.SELECTION_MODE == "signal"
+    stages = build_pipeline()
+    suffixes = {ps.name_suffix for ps in _n1_plots(stages)}
+    assert suffixes == {f"n_minus_1_{k}" for k in stages_mod.N_MINUS_1_STAGE_KEYS}
+
+
+def test_empty_n_minus_1_stage_keys_adds_no_plots():
+    stages_mod.N_MINUS_1_STAGE_KEYS = ()
     stages = build_pipeline()
     assert _n1_plots(stages) == []
 
@@ -78,11 +85,14 @@ def test_populating_stage_keys_and_vars_appends_expected_plotspecs():
     assert ps_softmax.breakdown_type == stages_mod.N_MINUS_1_BREAKDOWN_TYPE
     # Pre-filled default vline for this cut (see N_MINUS_1_VLINES) should be threaded
     # through to save_kwargs so overlay_hists_from_histdata draws the cut-threshold line.
-    assert ps_softmax.save_kwargs["vline"] == stages_mod.N_MINUS_1_VLINES["electron_softmax"]
+    # N_MINUS_1_VLINES is keyed by cut, then by var_save_name.
+    assert ps_softmax.save_kwargs["vline"] == \
+        stages_mod.N_MINUS_1_VLINES["electron_softmax"]["electron-softmax-score"]
 
     ps_dedx = by_suffix["n_minus_1_electron_dedx"]
     assert ps_dedx.var_config.var_save_name == "electron-dedx"
-    assert ps_dedx.save_kwargs["vline"] == stages_mod.N_MINUS_1_VLINES["electron_dedx"]
+    assert ps_dedx.save_kwargs["vline"] == \
+        stages_mod.N_MINUS_1_VLINES["electron_dedx"]["electron-dedx"]
 
 
 def test_held_out_key_actually_excludes_that_cut_from_its_own_n1_selector():
@@ -128,6 +138,13 @@ def test_unknown_stage_key_raises():
     stages_mod.N_MINUS_1_STAGE_KEYS = ["not_a_real_stage"]
     with pytest.raises(ValueError):
         build_pipeline()
+
+
+def test_other_mode_stage_key_is_skipped_not_raised():
+    """A key that only exists in the other selection mode is skipped quietly."""
+    stages_mod.N_MINUS_1_STAGE_KEYS = ["pi0_lead_photon", "electron_softmax"]
+    stages = build_pipeline()           # signal mode: no pi0_lead_photon stage
+    assert {ps.name_suffix for ps in _n1_plots(stages)} == {"n_minus_1_electron_softmax"}
 
 
 def test_stage_key_without_mask_fn_raises_with_helpful_message():

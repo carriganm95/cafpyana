@@ -52,11 +52,11 @@ def test_nueNp0Pi_variable_configs_subclasses_base():
     assert issubclass(NueVC, VariableConfig)
 
 
-def test_nueNp0Pi_muon_momentum_has_expected_shape():
+def test_nueNp0Pi_electron_energy_has_expected_shape():
     from analysis_village.nueNp0Pi.config.plots import VariableConfig as NueVC
 
-    vc = NueVC.muon_momentum()
-    assert vc.var_save_name == "muon-p"
+    vc = NueVC.electron_energy()
+    assert vc.var_save_name == "electron-e"
     assert len(vc.bin_centers) == len(vc.bins) - 1
     assert vc.xsec_label  # non-empty, inherited attribute the notebook copies lack
 
@@ -73,7 +73,7 @@ def test_nueNp0Pi_list_all_configs_enumerates_every_classmethod():
     from analysis_village.nueNp0Pi.config.plots import VariableConfig as NueVC
 
     names = NueVC.list_all_configs(print_summary=False)
-    assert "muon_momentum" in names
+    assert "electron_energy" in names
     assert "proton_momentum" in names
     assert "all_events" in names
     assert len(names) > 60  # ~68 at time of writing; guards against silent mass-deletion

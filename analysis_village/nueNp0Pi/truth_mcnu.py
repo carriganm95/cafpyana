@@ -11,6 +11,7 @@ Usage (writes a pickle that the truth plots overlay):
 
     python -m analysis_village.nueNp0Pi.truth_mcnu \
         --manifest <run_dir>/manifest.json --out <run_dir>/plots/pkl/truth/mcnu_truth_hists.pkl
+    (or --files '<dir>/*.df' instead of --manifest)
 """
 from __future__ import annotations
 
@@ -130,15 +131,24 @@ def build_mcnu_truth_hists(df_files, var_configs, nproc: int = 8) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--manifest", required=True, help="event-selection manifest.json (uses its mc files)")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--manifest", help="event-selection manifest.json (uses its mc files)")
+    src.add_argument("--files", help="glob of MC .df files instead, e.g. a BlueArc copy "
+                                     "(reading .df files through the /pnfs mount can hang)")
     ap.add_argument("--out", required=True, help="output pickle")
     ap.add_argument("--nproc", type=int, default=8)
     args = ap.parse_args()
 
     from analysis_village.nueNp0Pi.config.stages import EFFICIENCY_VARS
 
-    manifest = json.load(open(args.manifest))
-    files = [x["path"] for x in manifest["file_survey"] if x["sample"] == "mc"]
+    if args.files:
+        import glob
+        files = sorted(glob.glob(args.files))
+    else:
+        manifest = json.load(open(args.manifest))
+        files = [x["path"] for x in manifest["file_survey"] if x["sample"] == "mc"]
+    if not files:
+        raise SystemExit("no MC .df files found")
     res = build_mcnu_truth_hists(files, EFFICIENCY_VARS, nproc=args.nproc)
     makedirs(path.dirname(path.abspath(args.out)), exist_ok=True)
     with open(args.out, "wb") as f:

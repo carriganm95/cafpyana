@@ -21,6 +21,7 @@ from tqdm.auto import tqdm
 
 # Local application/custom imports
 from makedf.makedf import make_histgenevtdf, make_histpotdf
+from pyanalib.xrootd_paths import pnfs_to_xrootd
 
 CPU_COUNT = multiprocessing.cpu_count()
 
@@ -124,10 +125,8 @@ def _loaddf(applyfs, preprocess, g):
     original_fname = fname
 
     # Convert pnfs to xroot URL's
-    if fname.startswith("/pnfs"):
-        fname = fname.replace("/pnfs", "root://fndcadoor.fnal.gov:1094/pnfs/fnal.gov/usr")
-    elif fname.startswith("xroot"):
-        fname = fname[1:]
+    if fname.startswith("/pnfs") or fname.startswith("xroot"):
+        fname = pnfs_to_xrootd(fname)
 
     dfs = []
     tempfiles = []

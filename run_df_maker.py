@@ -1,5 +1,9 @@
 #!/usr/bin/env python3 
 import os,sys,time
+import json
+import re
+import shutil
+import subprocess
 import datetime
 import pathlib
 #from TimeTools import *
@@ -38,6 +42,9 @@ parser.add_argument('-ncpu', dest='NCPU', default=-1, type=int, help="Number of 
 parser.add_argument('-ngrid', dest='NGridJobs', default=0, type=int, help="Number of grid jobs. Default = 0, no grid submission.")
 parser.add_argument('-nfile', dest='NFiles', default=0, type=int, help="Number of files to run. Default = 0, run all input files.")
 parser.add_argument('-split', dest='SplitSize', default=1.0, type=float, help="Split size in GB before writing to HDF5. Default = 1.0 GB.")
+parser.add_argument('-resubmit_missing', dest='ResubmitDir', default="",
+                    help="Grid log dir of an earlier -ngrid submission ($CAFPYANA_GRID_OUT_DIR/logs/<ts>__<name>_log):\n"
+                         "resubmit only the jobs whose <name>_K.df is missing, with the same code bundle.")
 
 args = parser.parse_args()
 
@@ -119,6 +126,42 @@ def run_pool(output, inputs, nproc):
         hdf_pd.put(key="split", value=split_df, format="fixed")
         print(f"Saved split info: {split_df.iloc[0]['n_split']} total splits")
 
+def _git_commit():
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                              cwd=os.path.dirname(os.path.abspath(__file__))).stdout.strip()
+    except Exception:
+        return ""
+
+
+GIT_COMMIT = _git_commit()
+
+
+def submit_jobs(njobs, OutputDir, prefix):
+    """jobsub_submit from the current directory (a prepared MasterJobDir holding bin_dir.tar)."""
+    submitCMD = '''jobsub_submit \\
+-G sbnd \\
+--auth-methods="token" \\
+-e LC_ALL=C \\
+--role=Analysis \\
+--resource-provides="usage_model=DEDICATED,OPPORTUNISTIC" \\
+-l '+SingularityImage=\\"/cvmfs/singularity.opensciencegrid.org/fermilab/fnal-wn-el9\:9.7\\"' \\
+--lines '+FERMIHTC_AutoRelease=True' --lines '+FERMIHTC_GraceMemory=1000' --lines '+FERMIHTC_GraceLifetime=3600' \\
+--append_condor_requirements='(TARGET.HAS_SINGULARITY=?=true)' \\
+--tar_file_name "dropbox://$(pwd)/bin_dir.tar" \\
+-N %d \\
+--disk 100GB \\
+--cpu 1 \\
+--memory 10GB \\
+--expected-lifetime 24h \\
+"file://$(pwd)/grid_executable.sh" \\
+"%s" \\
+"%s"'''%(njobs,OutputDir,prefix)
+
+    print(submitCMD)
+    os.system(submitCMD)
+
+
 def run_grid(inputfiles):
     # 1) dir/file name style
     JobStartTime = datetime.datetime.now()
@@ -167,7 +210,7 @@ def run_grid(inputfiles):
     os.system('cp ./bin/grid_executable.sh %s' %MasterJobDir)
 
     # 5) prepare a package for xrootd
-    CAFPYANA_WD = os.environ['CAFPYANA_WD']
+    CAFPYANA_WD = os.environ.get('CAFPYANA_WD', os.path.dirname(os.path.abspath(__file__)))
     _site = CAFPYANA_WD + "/envs/venv_py310_cafpyana/lib/python3.10/site-packages"
     cp_XRootD = "cp -r " + _site + "/XRootD " + MasterJobDir
     cp_pyxrootd = "cp -r " + _site + "/pyxrootd " + MasterJobDir
@@ -185,32 +228,74 @@ def run_grid(inputfiles):
     tar_cmd = 'tar cf bin_dir.tar ./'
     os.system(tar_cmd)
 
-    submitCMD = '''jobsub_submit \\
--G sbnd \\
---auth-methods="token" \\
--e LC_ALL=C \\
---role=Analysis \\
---resource-provides="usage_model=DEDICATED,OPPORTUNISTIC" \\
--l '+SingularityImage=\\"/cvmfs/singularity.opensciencegrid.org/fermilab/fnal-wn-el9\:9.7\\"' \\
---lines '+FERMIHTC_AutoRelease=True' --lines '+FERMIHTC_GraceMemory=1000' --lines '+FERMIHTC_GraceLifetime=3600' \\
---append_condor_requirements='(TARGET.HAS_SINGULARITY=?=true)' \\
---tar_file_name "dropbox://$(pwd)/bin_dir.tar" \\
--N %d \\
---disk 100GB \\
---cpu 1 \\
---memory 10GB \\
---expected-lifetime 24h \\
-"file://$(pwd)/grid_executable.sh" \\
-"%s" \\
-"%s"'''%(ngrid,OutputDir,args.output)
-
-    print(submitCMD)
-    os.system(submitCMD)
+    with open('submit_info.json', 'w') as f:
+        json.dump({
+            "output": args.output, "config": args.config, "output_dir": OutputDir,
+            "n_jobs": ngrid, "n_inputs": NInputfiles, "submitted": timestamp,
+            "git_commit": GIT_COMMIT,
+        }, f, indent=2)
+    submit_jobs(ngrid, OutputDir, args.output)
     
     # go back to working dir
     os.chdir(CAFPYANA_WD)
     
+def resubmit_missing(log_dir):
+    """Resubmit the jobs of an earlier -ngrid submission whose output .df is missing.
+
+    Reuses the original code bundle (cafpyana.tar.gz) and per-job scripts, so the rerun
+    uses exactly the code and inputs of the first submission. Jobs are renumbered 0..M-1;
+    process_map.txt maps each back to its original index K so outputs keep their names.
+    """
+    log_dir = os.path.abspath(log_dir.rstrip('/'))
+    info_path = os.path.join(log_dir, 'submit_info.json')
+    if os.path.isfile(info_path):
+        info = json.load(open(info_path))
+        prefix, OutputDir = info['output'], info['output_dir']
+    else:   # older submissions: <ts>__<name>_log, outputs in $CAFPYANA_GRID_OUT_DIR/dfs/<ts>__<name>
+        m = re.match(r'^(\d{4}_\d{2}_\d{2}_\d{6})__(.+)_log$', os.path.basename(log_dir))
+        if not m:
+            sys.exit(f"can't parse submission name from {log_dir} (and no submit_info.json)")
+        prefix = m.group(2)
+        OutputDir = os.environ['CAFPYANA_GRID_OUT_DIR'] + '/dfs/' + m.group(1) + '__' + prefix
+    scripts = sorted((int(re.match(r'run_(\d+)\.sh$', f).group(1)) for f in os.listdir(log_dir)
+                      if re.match(r'run_(\d+)\.sh$', f)))
+    if not scripts:
+        sys.exit(f"no run_K.sh scripts in {log_dir}")
+    missing = [k for k in scripts
+               if not (os.path.isfile(f"{OutputDir}/{prefix}_{k}.df")
+                       and os.path.getsize(f"{OutputDir}/{prefix}_{k}.df") > 0)]
+    print(f"{len(scripts)} job(s) in {log_dir}; outputs in {OutputDir}; {len(missing)} missing: {missing}")
+    if not missing:
+        return
+
+    timestamp = datetime.datetime.now().strftime('%Y_%m_%d_%H%M%S')
+    new_dir = os.environ['CAFPYANA_GRID_OUT_DIR'] + '/logs/' + timestamp + '__' + prefix + '_resubmit_log'
+    os.makedirs(new_dir)
+    for name in ('cafpyana.tar.gz', 'XRootD', 'pyxrootd', 'xrootd.libs'):
+        src = os.path.join(log_dir, name)
+        if not os.path.exists(src):
+            sys.exit(f"{src} missing -- can't reproduce the original job environment")
+        (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, os.path.join(new_dir, name))
+    for j, k in enumerate(missing):
+        shutil.copy2(os.path.join(log_dir, f'run_{k}.sh'), os.path.join(new_dir, f'run_{j}.sh'))
+    with open(os.path.join(new_dir, 'process_map.txt'), 'w') as f:
+        f.write('\n'.join(str(k) for k in missing) + '\n')
+    CAFPYANA_WD = os.environ.get('CAFPYANA_WD', os.path.dirname(os.path.abspath(__file__)))
+    shutil.copy2(os.path.join(CAFPYANA_WD, 'bin', 'grid_executable.sh'), new_dir)
+    with open(os.path.join(new_dir, 'submit_info.json'), 'w') as f:
+        json.dump({"output": prefix, "output_dir": OutputDir, "n_jobs": len(missing),
+                   "resubmit_of": log_dir, "process_map": missing, "submitted": timestamp}, f, indent=2)
+    os.chdir(new_dir)
+    os.system('tar cf bin_dir.tar ./')
+    submit_jobs(len(missing), OutputDir, prefix)
+    os.chdir(CAFPYANA_WD)
+    print(f"resubmitted {len(missing)} job(s); logs in {new_dir}")
+
+
 if __name__ == "__main__":
+    if args.ResubmitDir:
+        resubmit_missing(args.ResubmitDir)
+        sys.exit(0)
     printhelp = ((args.inputfiles == "" and args.inputfilelist == "") or args.config == "" or args.output == "")
     if printhelp:
         parser.print_help()

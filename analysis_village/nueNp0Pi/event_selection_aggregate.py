@@ -135,6 +135,10 @@ def parse_args():
              "pickles (older pickles without it count as 'signal'). Aborts on a mismatch.",
     )
     p.add_argument(
+        "--syst", action="store_true", default=False,
+        help="Draw systematic uncertainty bands (off by default: config.stages.DISABLE_SYST_BANDS).",
+    )
+    p.add_argument(
         "--no-syst", action="store_true", default=False,
         help="Skip all systematic uncertainty bands (equivalent to NUMUCC_SYST_DISK_ROOT='').",
     )
@@ -471,7 +475,7 @@ def render_overlay_plots(
             print(f"[aggregate] WARN: plot {key} failed: {e}")
             plt.close('all')
 
-    if vars_missing_syst:
+    if vars_missing_syst and syst_disk_root is not None:
         uniq = sorted(set(vars_missing_syst))
         print(
             f"[aggregate] overlay plots without syst covariance ({len(vars_missing_syst)} plots, "
@@ -1412,7 +1416,10 @@ def aggregate_and_render(
     # ---- render (syst bands only from pre-saved disk covariances)
     from analysis_village.nueNp0Pi.utils import _DEFAULT_SYST_DISK_ROOT
     _env_syst = os.environ.get("NUMUCC_SYST_DISK_ROOT")
-    if _env_syst is not None:
+    if stages_mod.DISABLE_SYST_BANDS:
+        print("[aggregate] systematics bands off (config.stages.DISABLE_SYST_BANDS)", flush=True)
+        resolved_syst_disk_root = None
+    elif _env_syst is not None:
         # env var explicitly set: empty string means "no systematics"
         resolved_syst_disk_root = _env_syst or None
     else:
@@ -1420,7 +1427,7 @@ def aggregate_and_render(
     if resolved_syst_disk_root and not os.path.isdir(resolved_syst_disk_root):
         print(f"[aggregate] systematics disk root not found, skipping syst bands: {resolved_syst_disk_root}", flush=True)
         resolved_syst_disk_root = None
-    else:
+    elif not stages_mod.DISABLE_SYST_BANDS:
         print(f"[aggregate] systematics disk root: {resolved_syst_disk_root}", flush=True)
     render_overlay_plots(
         merged, plot_label_map={}, save_fig_dir=save_fig_dir,
@@ -1537,6 +1544,8 @@ def main():
             print(f"[aggregate] WARN: completeness check skipped ({exc})", flush=True)
 
     try:
+        if args.syst and not args.no_syst:
+            stages_mod.DISABLE_SYST_BANDS = False
         if args.no_syst:
             os.environ["NUMUCC_SYST_DISK_ROOT"] = ""
         aggregate_and_render(

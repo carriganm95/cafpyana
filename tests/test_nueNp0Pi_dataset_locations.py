@@ -48,6 +48,8 @@ def test_mc_glob_respects_spring_gen1_root_override(monkeypatch):
     # already-absolute path onto SPRING_GEN1_ROOT via pathlib's `/` operator, which
     # silently discards the left-hand side when the right side is absolute -- so
     # overriding NUMUCC_SPRING_GEN1_ROOT had no effect on this specific glob.
+    # SPRING_GEN1_ROOT takes precedence; clear it so the historical name is what's tested.
+    monkeypatch.delenv("SPRING_GEN1_ROOT", raising=False)
     monkeypatch.setenv("NUMUCC_SPRING_GEN1_ROOT", "/tmp/custom-root")
     # dataset_locations reads the env var at import time, so force a fresh import.
     import importlib
@@ -57,3 +59,17 @@ def test_mc_glob_respects_spring_gen1_root_override(monkeypatch):
         assert dl.EVENT_SELECTION_GLOBS["mc"].startswith("/tmp/custom-root")
     finally:
         importlib.reload(dl)  # restore module state for later tests
+
+
+def test_spring_gen1_root_env_var_takes_precedence(monkeypatch):
+    monkeypatch.setenv("SPRING_GEN1_ROOT", "/tmp/new-name-root")
+    monkeypatch.setenv("NUMUCC_SPRING_GEN1_ROOT", "/tmp/old-name-root")
+    import importlib
+    import analysis_village.nueNp0Pi.config.datasets as dl
+    importlib.reload(dl)
+    try:
+        assert dl.EVENT_SELECTION_GLOBS["mc"].startswith("/tmp/new-name-root")
+    finally:
+        monkeypatch.delenv("SPRING_GEN1_ROOT")
+        monkeypatch.delenv("NUMUCC_SPRING_GEN1_ROOT")
+        importlib.reload(dl)

@@ -1,0 +1,146 @@
+{
+    "mc1e20": {
+        "name": "MCFull",
+        "description": "SBND MC gen 1, 1e20 POT",
+        "path": "/pnfs/sbnd/persistent/users/mueller/MCP2025B/simulation/mc1e20/*.flat.caf.root",
+        "type": "mc",
+        "role": "cv"
+    },
+    "mc1e18": {
+        "name": "MCSmall",
+        "description": "SBND MC gen 1, 1e18 POT",
+        "path": "/pnfs/sbnd/persistent/users/mueller/MCP2025B/simulation/mc5e18/*.flat.caf.root",
+        "type": "mc",
+        "role": "cv"
+    },
+    "dev": {
+        "name": "Dev",
+        "description": "Fixed development dataset",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_bnblight_fixed_dev_reproc_full/*/*/*.flat.caf.root",
+        "type": "data",
+        "role": "data"
+    },
+    "offbeam": {
+        "name": "OffBeam",
+        "description": "SBND off-beam data",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/data_MCP2025C_Spring25_reprocess_Intime_offbeamlight_v10_06_00_09_caf_sbnd/*/*/*flat.caf.root",
+        "type": "data",
+        "role": "offbeam"
+    },
+    "cosmics": {
+        "name": "Cosmics",
+        "description": "SBND cosmics MC",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_intime_1e20/*/*/*.root",
+        "type": "mc",
+        "role": "intime"
+    },
+    "sce0x": {
+        "name": "SCE0x",
+        "description": "SBND MC with SCE 0x",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_sce0x/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "sce2x": {
+        "name": "SCE2x",
+        "description": "SBND MC with SCE 2x",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_sce2x/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "charge_scale": {
+        "name": "ChargeScale",
+        "description": "SBND MC with charge scale variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_charge_scale/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "gain_up": {
+        "name": "GainUp",
+        "description": "SBND MC with gain +5% variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_p5gain/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "gain_down": {
+        "name": "GainDown",
+        "description": "SBND MC with gain -5% variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_m5gain/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "smear": {
+        "name": "Smear",
+        "description": "SBND MC with 15% smear variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_smear15/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "wiremod_xthetaxw": {
+        "name": "WireModXThetaXW",
+        "description": "SBND MC with wiremod x-theta-xw variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_wiremod_xthetaxw/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "wiremod_yz": {
+        "name": "WireModYZ",
+        "description": "SBND MC with wiremod yz variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_wiremod_yz/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "wiremod_mattmod": {
+        "name": "WireModMattMod",
+        "description": "SBND MC with wiremod mattmod YZ variation",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_mattmodyz/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "detvar_cv": {
+        "name": "DetVarCV",
+        "description": "SBND MC detector variation CV",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_detvar_cv/*/*/*.root",
+        "type": "mc",
+        "role": "detvar"
+    },
+    "dent": {
+        "name": "DetVarDent",
+        "description": "SBND MC detector variation dent",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_run1_dent_variation/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "detvar_newcv": {
+        "name": "DetVarNewCV",
+        "description": "SBND MC detector variation new CV",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_newcv_lite/*/*/*.root",
+        "type": "mc",
+        "role": "detvar"
+    },
+    "new_dent": {
+        "name": "NewDent",
+        "description": "SBND MC detector variation new dent",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/flatcaf/sbnd_newdent_lite/*/*/*.root",
+        "type": "mc",
+        "role": "detvar",
+        "cv": "detvar"
+    },
+    "dirt": {
+        "name": "Dirt",
+        "description": "SBND low-energy dirt MC, 1e20 POT",
+        "path": "/pnfs/sbn/persistent/users/mueller/osc/sbnd/mc_MCP2025B_v10_06_00_09_prodgenie_corsika_proton_rockbox_lowenergydirt_sbnd_CV_caf_sbnd/*/*/*ar23p.flat.caf.root",
+        "type": "mc",
+        "role": "dirt"
+    }
+}

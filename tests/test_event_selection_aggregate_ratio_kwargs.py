@@ -136,7 +136,7 @@ def test_signal_bkgd_sums_multiple_indices_correctly():
     sig_w, bkg_w = out["ratio_weights"]
     assert np.allclose(sig_w, [3.0, 3.0])  # 1 + 2
     assert np.allclose(bkg_w, [7.0, 7.0])  # 3 + 4
-    assert out["ratio_label"] == "Signal/Background"
+    assert out["ratio_label"] == "S/B"
 
 
 def test_plotspec_level_ratio_label_wins_over_var_config_level():

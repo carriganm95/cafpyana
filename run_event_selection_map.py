@@ -80,8 +80,27 @@ parser.add_argument("-max_job_bytes_gb", default=10.0, type=float,
 parser.add_argument("-max_files_per_sample", default="",
                      help="(grid mode) Either a plain int applied to every sample, or comma-separated "
                           "sample=N pairs (e.g. 'mc=5' or 'mc=5,data=50') -- a sample not listed is unlimited.")
+# ---- Parquet skim (see analysis_village/nueNp0Pi/skim.py) ----
+parser.add_argument("-skim", action="store_true", default=False,
+                     help="Make a skim instead of the full selection: write the slices passing every "
+                          "stage up to config.stages.SKIM_STAGE_KEY (and their tracks) to "
+                          "<out_dir>/<sample>_{evt,trk}__batch_NNNN.parquet, plus the pre-skim "
+                          "histogram pickles for both selection modes. Works with single-job, "
+                          "-submit_grid and -resubmit_missing. Implies -selection both.")
+parser.add_argument("-merge_skim", action="store_true", default=False,
+                     help="Merge the skim jobs under -work_base into one Parquet file per sample "
+                          "and table, in -skim_dir (default <work_base>/skim).")
+parser.add_argument("-skim_dir", default="", help="Skim directory for -merge_skim (default <work_base>/skim).")
+parser.add_argument("-from_skim", default="",
+                     help="Run the selection over this skim directory (made by -merge_skim) and "
+                          "write pickles to -out_dir (sideband: <out_dir>_pi0_sideband with "
+                          "-selection both), ready for event_selection_aggregate.")
+parser.add_argument("-nproc", default=1, type=int, help="(-from_skim) Worker processes. Default 1.")
 
 args = parser.parse_args()
+if args.skim:
+    # One skim serves both selections; the pre-skim pickles differ per mode.
+    args.selection = "both"
 # Must be set before the pipeline modules are imported (they're imported lazily below).
 # "both" builds each mode's runner explicitly (see run_single_job).
 os.environ["NUENP0PI_SELECTION"] = "signal" if args.selection == "both" else args.selection
@@ -121,6 +140,26 @@ def run_single_job(files):
     for f in files:
         sizes.append(os.path.getsize(f) if os.path.isfile(f) else 0)
     job = BatchJob(sample=args.sample, job_id=args.job_id, files=files, total_bytes=sum(sizes))
+
+    if args.skim:
+        from pathlib import Path
+        from analysis_village.nueNp0Pi.skim import run_batch_skim
+        out_paths = {}
+        for mode, d in (("signal", args.out_dir), ("pi0_sideband", _sideband_dir(args.out_dir))):
+            Path(d).mkdir(parents=True, exist_ok=True)
+            out_paths[mode] = str(pipeline._batch_out_path(Path(d), job.sample, job))
+        if args.skip_existing and all(os.path.isfile(p) for p in out_paths.values()):
+            print(f"[run_event_selection_map] {list(out_paths.values())} exist; skipping", flush=True)
+            return
+        meta = run_batch_skim(
+            job.sample, job.files, out_paths, args.out_dir, job_id=job.job_id,
+            use_mc_genweight=cfg.use_mc_genweight,
+            pipeline_trace=(lambda msg: print(msg, flush=True)) if cfg.trace else None,
+        )
+        print(f"[run_event_selection_map] skim {job.tag}: {meta['n_evt']} -> {meta['n_evt_skim']} "
+              f"slices, {meta['n_trk_skim']} tracks; wrote {list(out_paths.values())} and "
+              f"{list(meta['skim_parts'].values())}", flush=True)
+        return
 
     if args.selection != "both":
         out = pipeline.process_one_job(job, args.out_dir, skip_existing=args.skip_existing)
@@ -203,13 +242,15 @@ def submit_grid():
         if args.mc_univ_syst:
             cmd += " -mc_univ_syst " + args.mc_univ_syst
         cmd += " -selection " + args.selection
+        if args.skim:
+            cmd += " -skim"
         out.write("mkdir -p ./out\n")
         out.write(cmd + "\n")
         out.close()
 
     os.system("cp ./bin/grid_executable_event_selection.sh %s" % MasterJobDir)
 
-    CAFPYANA_WD = os.environ["CAFPYANA_WD"]
+    CAFPYANA_WD = os.environ.get("CAFPYANA_WD", os.path.dirname(os.path.abspath(__file__)))
     _site = CAFPYANA_WD + "/envs/venv_py310_cafpyana/lib/python3.10/site-packages"
     cp_XRootD = "cp -r " + _site + "/XRootD " + MasterJobDir
     cp_pyxrootd = "cp -r " + _site + "/pyxrootd " + MasterJobDir
@@ -310,13 +351,15 @@ def resubmit_missing():
         if args.mc_univ_syst:
             cmd += " -mc_univ_syst " + args.mc_univ_syst
         cmd += " -selection " + args.selection
+        if args.skim:
+            cmd += " -skim"
         out.write("mkdir -p ./out\n")
         out.write(cmd + "\n")
         out.close()
 
     os.system("cp ./bin/grid_executable_event_selection.sh %s" % MasterJobDir)
 
-    CAFPYANA_WD = os.environ["CAFPYANA_WD"]
+    CAFPYANA_WD = os.environ.get("CAFPYANA_WD", os.path.dirname(os.path.abspath(__file__)))
     _site = CAFPYANA_WD + "/envs/venv_py310_cafpyana/lib/python3.10/site-packages"
     os.system("cp -r " + _site + "/XRootD " + MasterJobDir)
     os.system("cp -r " + _site + "/pyxrootd " + MasterJobDir)
@@ -362,8 +405,59 @@ def resubmit_missing():
     )
 
 
+def merge_skim():
+    from analysis_village.nueNp0Pi.event_selection import build_event_selection_pipeline
+    from analysis_village.nueNp0Pi.skim import merge_skim as _merge
+    from pyanalib.event_selection_pipeline import EventSelectionPipelineConfig
+
+    pipeline = build_event_selection_pipeline(EventSelectionPipelineConfig(work_base=args.work_base))
+    work, batches_dir, _ = pipeline.resolve_paths()
+    has_manifest = (work / "manifest.json").is_file()
+    if not has_manifest:
+        print(f"[run_event_selection_map] no manifest.json in {work} (local skim jobs?) -- "
+              f"skipping the completeness check against it", flush=True)
+    for mode, d in (("signal", batches_dir), ("pi0_sideband", _sideband_dir(batches_dir))):
+        if not has_manifest:
+            break
+        report = pipeline.check_batches(batches_dir=d)
+        if not report.is_complete:
+            sys.exit(f"[run_event_selection_map] {mode}: {len(report.missing)} missing / "
+                     f"{len(report.corrupt)} corrupt batch pickle(s) in {d} -- run "
+                     f"-skim -resubmit_missing first")
+    skim_dir = args.skim_dir or os.path.join(str(work), "skim")
+    _merge({"signal": str(batches_dir), "pi0_sideband": _sideband_dir(batches_dir)}, skim_dir)
+    print(f"[run_event_selection_map] skim written to {skim_dir}", flush=True)
+
+
+def from_skim():
+    from analysis_village.nueNp0Pi.skim import run_from_skim
+
+    if args.selection == "both":
+        out_dirs = {"signal": args.out_dir, "pi0_sideband": _sideband_dir(args.out_dir)}
+    else:
+        out_dirs = {args.selection: args.out_dir}
+    samples = None
+    if args.samples and "-samples" in sys.argv:
+        samples = [s.strip() for s in args.samples.split(",") if s.strip()]
+    run_from_skim(args.from_skim, out_dirs, samples=samples, nproc=args.nproc)
+    for m, d in out_dirs.items():
+        print(f"[run_event_selection_map] {m}: pickles in {d} -- aggregate with\n"
+              f"  python -m analysis_village.nueNp0Pi.event_selection_aggregate --in_dir {d} --out_dir <plots_dir>",
+              flush=True)
+
+
 if __name__ == "__main__":
-    if args.submit_grid:
+    if args.merge_skim:
+        if args.work_base == "":
+            parser.print_help()
+            sys.exit(1)
+        merge_skim()
+    elif args.from_skim:
+        if args.out_dir == "":
+            parser.print_help()
+            sys.exit(1)
+        from_skim()
+    elif args.submit_grid:
         if args.work_base == "":
             parser.print_help()
             sys.exit(1)

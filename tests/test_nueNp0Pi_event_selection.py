@@ -29,7 +29,8 @@ def _reset_disable_efficiency_accumulation():
 
 
 def test_breakdown_registry_has_expected_keys():
-    assert set(BREAKDOWN_REGISTRY.keys()) == {"topology", "genie", "genie_sb", "pdg"}
+    # "genie_sb" is commented out in config/stages.py until its categories are filled in.
+    assert set(BREAKDOWN_REGISTRY.keys()) == {"topology", "genie", "pdg"}
     for n_cat, get_cuts_fn in BREAKDOWN_REGISTRY.values():
         assert isinstance(n_cat, int) and n_cat > 0
         assert callable(get_cuts_fn)

@@ -103,11 +103,12 @@ not a leftover bug.
 Everything below lives in `config/` — see `config/README.md` for the full settings reference.
 This is just the "if you're getting started, here's what to look at" shortlist:
 
-1. **Where your input `.df` files are** — `config/datasets.py`: `SPRING_GEN1_ROOT` (defaults to
-   an env var `NUMUCC_SPRING_GEN1_ROOT`, historical name — see note below), and the
+1. **Where your input `.df` files are** — `config/datasets.py`: `SPRING_GEN1_ROOT` for MC and
+   `DATA_GEN1_ROOT` for data (env vars of the same names; the historical
+   `NUMUCC_SPRING_GEN1_ROOT` is still accepted for MC — see note below), and the
    `EVENT_SELECTION_GLOBS` / `SELECTED_EVENTS_GLOBS` / `MULTISIM_SYST_GLOBS_*` /
    `GENIE_GROUP_GLOBS` / `DETVAR_WIREMOD_GLOBS` dicts that build actual glob patterns from it.
-   Easiest override without editing the file: `export NUMUCC_SPRING_GEN1_ROOT=/your/path`.
+   Easiest override without editing the file: `export SPRING_GEN1_ROOT=/your/path`.
 2. **Where plots get saved** — `config/datasets.py`: `PLOTS_BASE` (env var
    `NUMUCC_PLOTS_BASE`) and `save_fig_base_dir`. Also `EventSelectionPipelineConfig.plots_dir`
    if you're calling `build_event_selection_pipeline` directly from a notebook/script.
@@ -144,6 +145,91 @@ the names were deliberately left as-is (documented in `config/datasets.py`'s own
 avoid breaking anyone's existing shell/grid setup that already sets them. A full rename is
 possible but hasn't been done. `FLUX_FILE` is the one path that already uses a `NUENP0PI_*`
 env var name.
+
+## Processing chain: CAF files to plots
+
+![Processing chain from CAF files to plots](docs/processing_chain.png)
+
+Each band is one stage: a processor (the code that runs) produces an output (the files it
+saves), which feeds the next stage. The image is drawn by `docs/make_processing_chain.py`;
+edit the `STAGES` list there and rerun it to update the picture.
+
+Notes:
+- The df maker's grid jobs ship **committed** code only (`git archive HEAD`); the skim
+  jobs ship the working tree. Commit `makedf/` changes before making `.df` files.
+- Each sample (nominal MC, data, cosmics, each detector variation) is its own pass
+  through this chain, with its own file list, `.df` directory and skim work base.
+- `truth_mcnu.py` reads `mcnu` from the original `.df` files (it isn't in the skim), so it
+  must run before those are removed, and before the aggregate step into the same `P`.
+- Legacy path, not drawn: the full event selection straight from the `.df` files
+  (`run_event_selection_map.py -submit_grid` without `-skim`, or
+  `notebooks/efficiency.ipynb`) produces the same histogram pickles without a skim, but
+  re-reads every input file on each run.
+
+### Running it: skills and the production log
+
+Each stage has a Claude Code skill in `.claude/skills/` (invoke with `/<name>` or by asking for
+the step); they hold the exact commands, checks and gotchas:
+
+| Skill | Stages | Does |
+|---|---|---|
+| `grid-env` | all | environment, token, `ifdh`/xrootd checks before any grid step |
+| `make-dfs` | 1–2 | file list from `filelists/datasets.json` (`filelists/make_filelist.py`), one-file test, `run_df_maker.py -ngrid`, copy to pnfs persistent (`bin/stage_to_persistent.sh <src> <dst>`) |
+| `grid-jobs` | 2–3 | `jobsub_q`, find missing outputs, logs, `-resubmit_missing` (df maker and skim) |
+| `validate-dfs` | 2→3 | `check_dfs.py` (tables/columns, metadata only), `validate_mcnu_truth.py` |
+| `make-skim` | 3 | `-skim -submit_grid`, pull back, `-merge_skim` |
+| `make-plots` | 4–5 | `-from_skim -selection both`, optional `truth_mcnu.py`, aggregate both modes |
+
+Every production (`.df` files, copies, skims, plot runs) is recorded in
+[`PRODUCTIONS.md`](PRODUCTIONS.md): command, commit, every output location, validation.
+Check it for the current inputs before running anything.
+
+`filelists/datasets.json` entries have a `type` (`mc`/`data`: picks the df-maker config) and a
+`role` (`cv`, `data`, `offbeam`, `intime`, `dirt`, `detvar`: how the sample is used; every
+detector-variation sample, CVs included, is `detvar` until code to process them exists).
+Each entry is its own production.
+
+## Skim workflow (Parquet)
+
+Running the selection over all the `.df` inputs re-reads every file each time a cut or plot
+changes. Instead, make a **skim** once per production and rerun from it:
+
+```bash
+# 1. once per production: skim on the grid (keeps slices passing FV + flash match +
+#    containment, i.e. every stage up to config.stages.SKIM_STAGE_KEY)
+python run_event_selection_map.py -skim -submit_grid -work_base <W> -samples mc,data
+#    pull the outputs back as printed (both <W>/batches and <W>/batches_pi0_sideband);
+#    -skim -resubmit_missing -work_base <W> resubmits failed jobs
+# 2. merge into one Parquet file per sample/table under <W>/skim
+python run_event_selection_map.py -merge_skim -work_base <W>
+# 3. every time a later cut/plot/binning changes (local, minutes)
+python run_event_selection_map.py -from_skim <W>/skim -out_dir <R> -selection both -nproc 4
+python -m analysis_village.nueNp0Pi.event_selection_aggregate --in_dir <R> --out_dir <plots>
+```
+
+`<W>/skim` holds `<sample>_evt.parquet` / `<sample>_trk.parquet` (one chunk per input file),
+`preskim/<mode>/<sample>__preskim.pkl` (histograms, cutflow, efficiency denominators and
+POT for the stages up to the skim cut) and `skim_manifest.json`. A `-from_skim` run fills only
+the stages after the skim cut and copies the preskim pickle next to its own, so the output
+directory aggregates exactly like a normal batches directory. On test files the two routes
+give identical histograms, cutflows, efficiencies and plots.
+
+**Re-skim when** a cut at or before `SKIM_STAGE_KEY` changes, the df maker changes, or a
+column computed in `event_selection.load_prepared_file` changes. Everything after the skim
+cut only needs step 3.
+
+Reading the skim directly (e.g. in a notebook), one chunk at a time:
+
+```python
+from pyanalib.parquet_skim import iter_skim_chunks, SkimFile
+for chunk_id, evt, trk in iter_skim_chunks("<W>/skim/mc_evt.parquet", "<W>/skim/mc_trk.parquet",
+                                           evt_columns=[("rec", "dlp"), ("pot_weight",)]):
+    ...   # evt/trk are the usual MultiIndex frames
+evt_all = SkimFile("<W>/skim/mc_evt.parquet").read(columns=[("rec", "dlp", "ele_energy_reco")])
+```
+
+`__ntuple` is rewritten to `chunk_id * 10000 + __ntuple` so (`__ntuple`, `entry`) stays unique
+across input files. `mcnu` isn't in the skim (`truth_mcnu.py` reads the original files).
 
 ## Everything not listed above
 

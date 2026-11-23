@@ -913,22 +913,26 @@ def make_nueNp0Pi_selected_df(f):
 
 def _apply_pi0_sideband_cuts(df):
     """pi0 sideband: the nueNp0Pi selection (see make_nueNp0Pi_selected_df) with the
-    photon veto and the electron dE/dx cut removed, plus at least two primary reco
-    photons -- leading KE > PI0_LEAD_GAM_KE_TH, subleading KE > PI0_SUB_GAM_KE_TH (MeV)."""
+    photon veto, the PID-score cuts (electron primary/softmax, proton softmax), the electron
+    vertex-distance cut and the electron dE/dx cut removed, plus at least two primary reco
+    photons -- leading KE > PI0_LEAD_GAM_KE_TH, subleading KE > PI0_SUB_GAM_KE_TH (MeV).
+
+    Keep in sync with the "pi0_sideband" stages in config/stages.py:build_pipeline
+    (tests/test_nueNp0Pi_pi0_sideband_sync.py checks the two agree)."""
     # pre-selection cuts
     df = df[(df.rec.dlp['is_fiducial'] == 1) & (df.rec.dlp['sbnd_fiducial_reco'] == 1)]
     df = df[df.rec.dlp['is_flash_matched'] == 1]
     df = df[df.rec.dlp['is_contained'] == 1]
 
-    # selection cuts (no photon veto, no electron dE/dx cut)
+    # selection cuts (no photon veto, no PID-score / vertex-distance / dE/dx cuts)
     df = df[df.rec.dlp['muon_mask_reco'] == False]
     df = df[df.rec.dlp['pion_mask_reco'] == False]
     df = df[df.rec.dlp['ele_mask_reco'] == True]
     df = df[df.rec.dlp['proton_mask_reco'] == True]
-    df = df[df.rec.dlp['ele_primary_reco'] >= ELE_PRIMARY_TH]
-    df = df[df.rec.dlp['ele_softmax_reco'] >= ELE_SOFTMAX_TH]
-    df = df[df.rec.dlp['proton_softmax_reco'] >= P_SOFTMAX_TH]
-    df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VTXDIST_TH]
+    # df = df[df.rec.dlp['ele_primary_reco'] >= ELE_PRIMARY_TH]
+    # df = df[df.rec.dlp['ele_softmax_reco'] >= ELE_SOFTMAX_TH]
+    # df = df[df.rec.dlp['proton_softmax_reco'] >= P_SOFTMAX_TH]
+    # df = df[df.rec.dlp['ele_vertex_distance_reco'] < ELE_VTXDIST_TH]
 
     # pi0 requirement: two photons
     df = df[df.rec.dlp['photon_energy_reco'] > PI0_LEAD_GAM_KE_TH]

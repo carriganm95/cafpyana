@@ -24,8 +24,9 @@ stage -- configurable from a notebook cell via the ``EVT_BREAKDOWN_*`` module
 attributes (see the comment above them) without editing this file.
 
 It can also attach "N-1" plots -- for a held-out cut, apply every OTHER cut and plot a
-chosen variable, the classic diagnostic for validating a cut threshold. Off by default;
-configurable via the ``N_MINUS_1_*`` module attributes (see the comment above them).
+chosen variable, the classic diagnostic for validating a cut threshold. On by default for
+every threshold cut (so grid jobs make them); configurable via the ``N_MINUS_1_*`` module
+attributes (see the comment above them) -- set ``N_MINUS_1_STAGE_KEYS = ()`` to turn off.
 """
 from __future__ import annotations
 
@@ -309,6 +310,14 @@ EVT_BREAKDOWN_DIR_NAME: Optional[str] = None
 # live-read-at-render-time pattern as EVT_BREAKDOWN_DIR_NAME above -- read by
 # event_selection_aggregate.py's render_overlay_plots via ``stages_mod.DISABLE_RATIO_PLOTS``.
 DISABLE_RATIO_PLOTS: bool = False
+
+# Systematic-uncertainty bands on the overlay plots. Off (True) until nueNp0Pi has its own
+# systematics: the loaders still point at the numu CC 1p0pi covariances this repo was
+# adapted from (utils._DEFAULT_SYST_DISK_ROOT), which don't match these variables. While
+# True, event_selection_aggregate ignores every systematics source (--syst-disk-root,
+# NUMUCC_SYST_DISK_ROOT, the default root). Set False (or pass --syst to the aggregate CLI)
+# to turn bands back on.
+DISABLE_SYST_BANDS: bool = True
 # Data/MC overlays: True scales the MC stack to the data integral (area normalized);
 # False keeps the MC scaled to data POT. Temporarily area normalized -- set back to
 # False to return to POT normalization.
@@ -338,7 +347,10 @@ DISABLE_EFFICIENCY_ACCUMULATION: bool = False
 # Selection mode
 # ---------------------------------------------------------------------------
 #   "signal"       -- the nueNp0Pi selection (default).
-#   "pi0_sideband" -- same cuts minus the photon veto and electron dE/dx cut, plus two
+#   "pi0_sideband" -- the pre-selection plus the particle-content cuts (no muons/pions,
+#                     an electron and a proton above threshold), WITHOUT the photon veto,
+#                     the PID-score cuts (electron softmax/primary, proton softmax), the
+#                     electron vertex-distance cut and the electron dE/dx cut; plus two
 #                     reco photons (leading > PI0_LEAD_GAM_KE_TH, subleading >
 #                     PI0_SUB_GAM_KE_TH). Matches makedf/make_nueccdf.py's
 #                     _apply_pi0_sideband_cuts, but runs on the all-slice inputs so the
@@ -360,6 +372,28 @@ def set_selection_mode(mode: str) -> None:
 
 def efficiency_enabled() -> bool:
     return not DISABLE_EFFICIENCY_ACCUMULATION and SELECTION_MODE == "signal"
+
+
+# ===========================================================================
+# Skim
+# ---------------------------------------------------------------------------
+# The skim keeps only slices passing every stage up to and including SKIM_STAGE_KEY
+# (written to Parquet by run_event_selection_map.py -skim). Those early stages are
+# histogrammed while making the skim; the stages after it are histogrammed when running
+# over the skim (-from_skim). Changing any cut at or before SKIM_STAGE_KEY therefore needs
+# a new skim; everything after it only needs a -from_skim rerun. The stages up to here
+# must be the same in every SELECTION_MODE, so one skim serves both modes.
+# ===========================================================================
+SKIM_STAGE_KEY: str = "is_contained"
+
+
+def split_at_skim(stages) -> Tuple[List[str], List[str]]:
+    """``(pre, post)`` stage keys: ``pre`` = up to and including ``SKIM_STAGE_KEY``."""
+    keys = [s.key for s in stages]
+    if SKIM_STAGE_KEY not in keys:
+        raise ValueError(f"SKIM_STAGE_KEY={SKIM_STAGE_KEY!r} is not a stage (have: {keys})")
+    i = keys.index(SKIM_STAGE_KEY) + 1
+    return keys[:i], keys[i:]
 
 
 # ===========================================================================
@@ -479,6 +513,17 @@ N_MINUS_1_VLINES: Dict[str, Dict[str, Sequence[Tuple[float, int]]]] = {
 # ===========================================================================
 # Pipeline definition
 # ===========================================================================
+# Stages that exist in only one SELECTION_MODE (see build_pipeline). N-1 keys naming one of
+# these are skipped in the other mode instead of raising.
+MODE_SPECIFIC_STAGE_KEYS = frozenset({
+    # signal only
+    "no_photons", "electron_softmax", "electron_primary", "proton_softmax",
+    "electron_vertex_distance", "electron_dedx",
+    # pi0_sideband only
+    "pi0_lead_photon", "pi0_sub_photon",
+})
+
+
 def build_pipeline() -> List[Stage]:
     """Return the list of stages run by the chunk processor.
 
@@ -588,41 +633,44 @@ def build_pipeline() -> List[Stage]:
         save_for_breakdown=True,
     ))
 
-    stages.append(Stage(
-        key="electron_softmax",
-        label="Electron Softmax >= 0.9",
-        **_evt_cut(electron_softmax),
-        plots=[],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+    # PID-score and vertex-distance cuts: signal only. The pi0 sideband leaves them out
+    # (matches makedf/make_nueccdf.py's _apply_pi0_sideband_cuts).
+    if not sideband:
+        stages.append(Stage(
+            key="electron_softmax",
+            label="Electron Softmax >= 0.9",
+            **_evt_cut(electron_softmax),
+            plots=[],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
 
-    stages.append(Stage(
-        key='electron_primary',
-        label='Electron Primary Score >= 0.99',
-        **_evt_cut(electron_primary),
-        plots=[],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+        stages.append(Stage(
+            key='electron_primary',
+            label='Electron Primary Score >= 0.99',
+            **_evt_cut(electron_primary),
+            plots=[],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
 
-    stages.append(Stage(
-        key="proton_softmax",
-        label="Proton Softmax >= 0.75",
-        **_evt_cut(proton_softmax),
-        plots=[],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+        stages.append(Stage(
+            key="proton_softmax",
+            label="Proton Softmax >= 0.75",
+            **_evt_cut(proton_softmax),
+            plots=[],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
 
-    stages.append(Stage(
-        key='electron_vertex_distance',
-        label='Electron Vertex Distance < 3.5cm',
-        **_evt_cut(electron_vertex_distance),
-        plots=[],
-        save_for_efficiency=True,
-        save_for_breakdown=True,
-    ))
+        stages.append(Stage(
+            key='electron_vertex_distance',
+            label='Electron Vertex Distance < 3.5cm',
+            **_evt_cut(electron_vertex_distance),
+            plots=[],
+            save_for_efficiency=True,
+            save_for_breakdown=True,
+        ))
 
     if not sideband:
         stages.append(Stage(
@@ -695,15 +743,16 @@ def build_pipeline() -> List[Stage]:
 
     # ------------------------------------------------------------------
     # N-1 plots (notebook-configurable -- see the N_MINUS_1_* module attributes above).
-    # Off by default (N_MINUS_1_STAGE_KEYS starts empty).
+    # On by default; N_MINUS_1_STAGE_KEYS = () turns them off.
     # ------------------------------------------------------------------
     n1_keys = [k for k in N_MINUS_1_STAGE_KEYS]
     if sideband:
         n1_keys += [k for k in N_MINUS_1_SIDEBAND_STAGE_KEYS if k not in n1_keys]
-    # Skip held-out keys whose stage isn't in this mode's pipeline (e.g. electron_dedx in
-    # the sideband).
+    # Skip held-out keys whose stage only exists in the OTHER selection mode (e.g.
+    # electron_dedx in the sideband). Any other unknown key still raises below, so a
+    # typo isn't silently ignored.
     present = {s.key for s in stages}
-    n1_keys = [k for k in n1_keys if k in present]
+    n1_keys = [k for k in n1_keys if k in present or k not in MODE_SPECIFIC_STAGE_KEYS]
     if n1_keys:
         if N_MINUS_1_BREAKDOWN_TYPE not in BREAKDOWN_REGISTRY:
             raise ValueError(

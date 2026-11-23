@@ -81,11 +81,14 @@ FLUX_FILE = os.environ.get(
 # -----------------------------------------------------------------------------
 # Base release (Spring Gen 1 — edit for other campaigns)
 # -----------------------------------------------------------------------------
+# SPRING_GEN1_ROOT wins; NUMUCC_SPRING_GEN1_ROOT (the historical name, see the note
+# above) is still honoured so existing shell/grid setups keep working.
 SPRING_GEN1_ROOT = Path(
-    os.environ.get(
-        "SPRING_GEN1_ROOT",
-        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_v3/",
-    )
+    os.environ.get("SPRING_GEN1_ROOT")
+    or os.environ.get("NUMUCC_SPRING_GEN1_ROOT")
+    # nueNp0Pi_mc_v4 (has the pi0 columns); pnfs persistent so grid jobs can read it.
+    # See analysis_village/nueNp0Pi/PRODUCTIONS.md for every production and its copies.
+    or "/pnfs/sbnd/persistent/users/micarrig/nueNp0Pi/selection_v4/"
 )
 
 SPRING_GEN1_ROOT_EAF = Path(
@@ -98,7 +101,8 @@ SPRING_GEN1_ROOT_EAF = Path(
 DATA_GEN1_ROOT = Path(
     os.environ.get(
         "DATA_GEN1_ROOT",
-        "/exp/sbnd/data/users/micarrig/nueNp0Pi/selection_data_v1/",
+        # nueNp0Pi_data_v2 (has the pi0 columns); see PRODUCTIONS.md
+        "/pnfs/sbnd/persistent/users/micarrig/nueNp0Pi/selection_data_v2/",
     )
 )
 
