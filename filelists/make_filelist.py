@@ -57,6 +57,10 @@ def main():
         sys.exit(f"unknown dataset {args.key!r}; known: {', '.join(cat)}")
 
     entry = cat[args.key]
+    suffix = "_test" if args.max_files else ""
+    out = args.out or os.path.join(HERE, f"filelist_{args.key}{suffix}.txt")
+    if os.path.exists(out):
+        sys.exit(f"{out} already exists; not overwriting (use --out for a new name)")
     files = resolve(entry["path"], args.max_files)
     if not files:
         sys.exit(f"no files match {entry['path']}")
@@ -65,8 +69,6 @@ def main():
     if bad:
         sys.exit(f"{len(bad)} path(s) could not be converted to xrootd URLs, e.g. {bad[0]}")
 
-    suffix = "_test" if args.max_files else ""
-    out = args.out or os.path.join(HERE, f"filelist_{args.key}{suffix}.txt")
     with open(out, "w") as f:
         f.write("\n".join(urls) + "\n")
     print(f"{len(urls)} file(s) from {entry['path']}\n  type={entry['type']} role={entry.get('role')}"

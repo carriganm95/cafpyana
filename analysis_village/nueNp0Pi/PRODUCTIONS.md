@@ -29,10 +29,38 @@ Entry template:
 
 ## PLANNED v5: full reprocessing (decided 2026-11-23, not started)
 One commit for every sample, all named `nueNp0Pi_<key>_v5`:
-`mc1e20` (cv, `nuecc_mc.py`), `dev` (data, `nuecc_data.py`), `offbeam` (`nuecc_data.py`),
-`cosmics` (in-time MC, `nuecc_mc.py`, ~200k CAFs), `dirt` (`nuecc_mc.py`).
+`mc1e20` (cv, `nuecc_mc.py`), `dev` (data, `nuecc_data.py`), `offbeam` (`nuecc_data_presel.py`),
+`cosmics` (in-time MC, `nuecc_mc_presel.py`, ~200k CAFs), `dirt` (`nuecc_mc_presel.py`).
+Background samples use the preselected configs (decided 2026-11-24): only slices passing
+FV + flash match + containment are written, so their cutflow starts at containment; header
+POT/gates are complete.
 Detector variations later. Before submitting: commit the working tree, one-file local test per
 sample, explicit yes per submission (see `CLAUDE.md`).
+
+- 2026-11-23 file lists (`filelists/make_filelist.py`): mc1e20 799, dev 1779 (identical to
+  `filelist_data_bnblight.txt`), offbeam 34,923, dirt 113,066 (path
+  `mc_MCP2025B_..._lowenergydirt_sbnd_CV_caf_sbnd/*/*/*ar23p.flat.caf.root`), cosmics 203,841.
+- 2026-11-24 one-CAF local tests, code `2ed1802` (branch `nueNp0pi_v5`, df-maker code clean),
+  outputs in `/exp/sbnd/data/users/micarrig/nueNp0Pi/v5_tests/<key>/` (`run_tests2.log`):
+  all exit 0 and pass `check_dfs`; header normalisation present for each role.
+
+  | key | config | time | peak RAM | output | slices | hdr |
+  |---|---|---|---|---|---|---|
+  | dev | nuecc_data | 14 s | 0.4 GB | 1.8 MB | 629 | POT 2.8e15, 736 BNB gates |
+  | offbeam | nuecc_data | 9 s | 0.4 GB | 1.8 MB | 617 | 2545 off-beam gates |
+  | dirt | nuecc_mc | 11 s | 0.4 GB | 2.2 MB | 171 | POT 3.0e15, mcnu 23 |
+  | cosmics | nuecc_mc | 11 s | 0.4 GB | 2.2 MB | 163 | 500 generated events, mcnu empty |
+  | mc1e20 | nuecc_mc | 102 s | 2.5 GB | 491 MB | 88,409 | POT 7.5e17, mcnu 13,297 |
+
+- 2026-11-24 preselected configs (`nuecc_{mc,data}_presel.py`, uncommitted at test time), same
+  CAFs, outputs in `v5_tests/<key>_presel/`: kept slices identical to applying the three cuts
+  to the full test output, tracks only of kept slices, header unchanged; check_dfs OK.
+  offbeam 617->0 slices, dirt 171->4, cosmics 163->0 per CAF. 20-CAF dirt test
+  (`v5_tests/dirt_presel20/`): 3m30s, 0.4 GB peak, 1.75 MB (~0.02 MB per extra CAF) ->
+  ~9 MB per ~380-CAF job; all three background samples ~10 GB total (vs ~760 GB unselected).
+
+  Note: reading the CAF directly over xrootd (instead of a local copy, as grid jobs do) left
+  the process hung at exit after finishing; local copies exit cleanly.
 
 ## 2026-10-29 selection (full map, no skim): 20261029_v4
 - command: `run_event_selection_map.py -submit_grid -selection both` (manifest created 2026-10-29 12:02)

@@ -887,6 +887,69 @@ def make_nueNp0Pi_data_df(f):
     return slcdf
 
 
+# ---------------------------------------------------------------------------
+# Preselected outputs, for background samples (off-beam, in-time cosmics, dirt).
+#
+# The standard evt/trk tables keep every reco slice so the event-selection pipeline can
+# show the full cutflow and take efficiency denominators from all slices. Background
+# samples need neither, and are dominated by slices that fail the preselection, so for
+# them the df maker keeps only slices passing FV + flash match + containment (the same
+# cuts as the pipeline's first stages, config/stages.py up to SKIM_STAGE_KEY) and only
+# those slices' particles. Use df_maker_configs/nuecc_{mc,data}_presel.py.
+#
+# run_df_maker applies the DFS functions to one open file in list order, so the evt
+# function records which slices passed and the trk function (listed after it) reuses that.
+# ---------------------------------------------------------------------------
+_PRESEL_KEEP = {"key": None, "index": None}
+
+
+def _presel_file_key(f):
+    return (id(f), getattr(f, "file_path", None))
+
+
+def _apply_preselection(df):
+    df = df[(df.rec.dlp['is_fiducial'] == 1) & (df.rec.dlp['sbnd_fiducial_reco'] == 1)]
+    df = df[df.rec.dlp['is_flash_matched'] == 1]
+    df = df[df.rec.dlp['is_contained'] == 1]
+    return df
+
+
+def _preselect_and_remember(df, f):
+    df = _apply_preselection(df)
+    _PRESEL_KEEP.update(key=_presel_file_key(f), index=df.index)
+    return df
+
+
+def _tracks_of_preselected(trk, f):
+    if _PRESEL_KEEP["key"] != _presel_file_key(f):
+        raise RuntimeError("preselected trk table needs the preselected evt function to run "
+                           "first on the same file (put it before the trk function in DFS)")
+    keep = _PRESEL_KEEP["index"]
+    if trk is None or len(trk) == 0:
+        return trk
+    return trk[trk.index.droplevel(-1).isin(keep)]
+
+
+def make_nueNp0Pi_presel_df(f):
+    """MC evt table with only preselected slices (FV, flash-matched, contained)."""
+    return _preselect_and_remember(make_nueNp0Pi_df(f), f)
+
+
+def make_nueNp0Pi_presel_data_df(f):
+    """Data evt table with only preselected slices (FV, flash-matched, contained)."""
+    return _preselect_and_remember(make_nueNp0Pi_data_df(f), f)
+
+
+def make_spine_part_presel_df(f):
+    """MC particle table restricted to the slices kept by make_nueNp0Pi_presel_df."""
+    return _tracks_of_preselected(make_spine_part_df(f), f)
+
+
+def make_spine_part_reco_presel_df(f):
+    """Data particle table restricted to the slices kept by make_nueNp0Pi_presel_data_df."""
+    return _tracks_of_preselected(make_spine_part_reco_df(f), f)
+
+
 def make_nueNp0Pi_selected_df(f):
 
     df = make_nueNp0Pi_df(f)

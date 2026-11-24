@@ -24,6 +24,13 @@
    removing their own partial output before retrying a failed copy, inside a job the user
    approved.
 
+4. **The user handles all git changes.** Never run `git add`, `git commit`, `git checkout -b`,
+   `git branch`, `git stash`, `git push`, `git merge`, `git rebase`, `git reset` or open PRs
+   unless the user explicitly tells you to do that specific thing. A question ("can we run on
+   a different branch?", "can you make me a commit message?") is not an instruction: answer
+   it, and give the commands or message for the user to run. Read-only git (`status`, `diff`,
+   `log`, `show`) is fine.
+
 When a rule blocks a step, stop and ask; don't look for a workaround.
 
 ## Where things are
