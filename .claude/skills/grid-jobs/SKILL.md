@@ -20,9 +20,9 @@ Jobs finishing isn't proof of success — always count outputs (below).
 
 **df maker** (outputs `<name>_K.df`, K = 0..N-1):
 ```bash
-LOG=$CAFPYANA_GRID_OUT_DIR/logs/<ts>__<name>_log
+LOG=$CAFPYANA_GRID_JOB_DIR/logs/<ts>__<name>_log   # before 2026-11-24: $CAFPYANA_GRID_OUT_DIR/logs/...
 OUT=$CAFPYANA_GRID_OUT_DIR/dfs/<ts>__<name>
-N=$(ls $LOG/run_*.sh | wc -l); have=$(ls $OUT/*.df 2>/dev/null | wc -l); echo "$have / $N"
+N=$(grep N_JOBS $LOG/job.env | cut -d= -f2); have=$(ls $OUT/*.df 2>/dev/null | wc -l); echo "$have / $N"
 ```
 `run_df_maker.py -resubmit_missing $LOG` also prints the missing indices before submitting.
 
@@ -42,8 +42,10 @@ checks every job in `<W>/manifest.json` and resubmits the missing/corrupt ones.
   NEW submission, since resubmission reuses the original code bundle).
 
 ## Resubmit missing jobs
-**df maker** (reuses the original `cafpyana.tar.gz`, inputs and output names; jobs are
-renumbered and mapped back with `process_map.txt`):
+**df maker** (reuses the original `cafpyana.tar.gz`, `filelist.txt` and output names; jobs are
+renumbered and mapped back with `process_map.txt`; the new bundle goes in
+`$CAFPYANA_GRID_JOB_DIR/logs/<ts>__<name>_resubmit_log`). Old submissions whose log dir is on
+/pnfs can't be resubmitted from the gpvm (copying their bundle reads /pnfs, which hangs):
 ```bash
 cd $REPO && source setup.sh >/dev/null 2>&1 && python run_df_maker.py -resubmit_missing $LOG
 ```

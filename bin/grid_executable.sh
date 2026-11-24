@@ -75,26 +75,50 @@ echo "@@ outDir : "${outDir}
 echo "@@ ifdh  mkdir_p "${outDir}
 ifdh mkdir_p ${outDir} || true
 
-echo "@@ source ${filesFromSender}/run_"${nProcess}".sh "
 ls -ltr
+jobLog=log_${outIdx}.log
 
-cp ${filesFromSender}/run_${nProcess}.sh ./
-source run_${nProcess}.sh  &> log_${nProcess}.log
+if [ -f ${filesFromSender}/job.env ]; then
+  # Current layout: one filelist.txt for the whole submission. Job K (= outIdx) processes
+  # lines K, K+N_JOBS, K+2*N_JOBS, ... (0-based), as run_df_maker.py assigns them.
+  source ${filesFromSender}/job.env
+  echo "@@ config ${DF_CONFIG}, prefix ${DF_PREFIX}, job ${outIdx} of ${N_JOBS}"
+  mapfile -t myInputs < <(awk -v k=${outIdx} -v n=${N_JOBS} 'NF && (NR-1)%n==k' ${filesFromSender}/filelist.txt)
+  {
+    if [ ${#myInputs[@]} -eq 0 ]; then
+      echo "@@ no input files for job ${outIdx}"
+    else
+      names=()
+      for i in "${!myInputs[@]}"; do
+        echo "[job ${outIdx}] input ${i} : ${myInputs[$i]}"
+        xrdcp ${myInputs[$i]} .
+        names+=("$(basename ${myInputs[$i]})")
+      done
+      ls -alh
+      python run_df_maker.py -c ${DF_CONFIG} -o ${DF_PREFIX}_${outIdx}.df -ncpu 1 -i $(IFS=,; echo "${names[*]}")
+    fi
+  } &> ${jobLog}
+else
+  # Older submissions (and their resubmissions): one run_K.sh per job
+  echo "@@ source ${filesFromSender}/run_"${nProcess}".sh "
+  cp ${filesFromSender}/run_${nProcess}.sh ./
+  source run_${nProcess}.sh  &> ${jobLog}
+fi
 ls -ltr
 
 echo "@@ print log"
-more log_${nProcess}.log
+more ${jobLog}
 echo "@@ Check output : ${DFPREFIX}_${outIdx}.df"
 ls -alh ${DFPREFIX}_${outIdx}.df
 
 outFILE=${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df
 if [ -f "$outFILE" ]; then
-  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df ${outDir}/${DFPREFIX}_${outIdx}.df"
-  ifdh cp ${thisOutputCreationDir}/cafpyana/${DFPREFIX}_${outIdx}.df ${outDir}/${DFPREFIX}_${outIdx}.df
-  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log"
-  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log
+  echo "ifdh cp ${outFILE} ${outDir}/${DFPREFIX}_${outIdx}.df"
+  ifdh cp ${outFILE} ${outDir}/${DFPREFIX}_${outIdx}.df
+  echo "ifdh cp ${thisOutputCreationDir}/cafpyana/${jobLog} ${outDir}/log_${outIdx}.log"
+  ifdh cp ${thisOutputCreationDir}/cafpyana/${jobLog} ${outDir}/log_${outIdx}.log
   echo "@@ Done!"
 else
-  ifdh cp ${thisOutputCreationDir}/cafpyana/log_${nProcess}.log ${outDir}/log_${outIdx}.log
+  ifdh cp ${thisOutputCreationDir}/cafpyana/${jobLog} ${outDir}/log_${outIdx}.log
   echo "File not exist"
 fi

@@ -2,6 +2,7 @@
 import os,sys,time
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import datetime
@@ -30,7 +31,8 @@ Examples:
   $ python run_df_maker.py -ngrid 2 -c ./configs/cohpi_slcdf.py -o test_cohpi_slcdf -i input_0.root,input_1.root,...
 
   -- Note!!
-  Output df files are sent to /pnfs/<exp>/scratch/users/<User>/cafpyana_out in Grid mode
+  Output df files are sent to $CAFPYANA_GRID_OUT_DIR/dfs (/pnfs scratch) in Grid mode; the job
+  bundle and submission metadata are kept in $CAFPYANA_GRID_JOB_DIR/logs (local disk).
 """,
     formatter_class=argparse.RawTextHelpFormatter  # Ensures line breaks are preserved
 )
@@ -43,7 +45,7 @@ parser.add_argument('-ngrid', dest='NGridJobs', default=0, type=int, help="Numbe
 parser.add_argument('-nfile', dest='NFiles', default=0, type=int, help="Number of files to run. Default = 0, run all input files.")
 parser.add_argument('-split', dest='SplitSize', default=1.0, type=float, help="Split size in GB before writing to HDF5. Default = 1.0 GB.")
 parser.add_argument('-resubmit_missing', dest='ResubmitDir', default="",
-                    help="Grid log dir of an earlier -ngrid submission ($CAFPYANA_GRID_OUT_DIR/logs/<ts>__<name>_log):\n"
+                    help="Job dir of an earlier -ngrid submission ($CAFPYANA_GRID_JOB_DIR/logs/<ts>__<name>_log):\n"
                          "resubmit only the jobs whose <name>_K.df is missing, with the same code bundle.")
 
 args = parser.parse_args()
@@ -162,17 +164,44 @@ def submit_jobs(njobs, OutputDir, prefix):
     os.system(submitCMD)
 
 
+def grid_job_dir():
+    """Local directory where grid submissions are prepared and their metadata kept.
+
+    Not on /pnfs: writing file contents through the /pnfs NFS mount hangs on the gpvms.
+    Grid jobs never read this directory -- jobsub uploads bin_dir.tar at submission time.
+    """
+    d = os.environ.get('CAFPYANA_GRID_JOB_DIR', '')
+    if not d:
+        sys.exit("CAFPYANA_GRID_JOB_DIR is not set (source setup.sh)")
+    if d.startswith('/pnfs'):
+        sys.exit(f"CAFPYANA_GRID_JOB_DIR={d} is on /pnfs; writes there hang -- use a local disk")
+    return d
+
+
+def write_job_inputs(job_dir, inputfiles, njobs, prefix, config):
+    """The two files every job reads to find its work (see bin/grid_executable.sh).
+
+    filelist.txt: all input CAFs; job K processes lines K, K+njobs, K+2*njobs, ... (0-based).
+    job.env:      shell variables DF_CONFIG, DF_PREFIX, N_JOBS.
+    """
+    with open(os.path.join(job_dir, 'filelist.txt'), 'w') as f:
+        f.write('\n'.join(inputfiles) + '\n')
+    with open(os.path.join(job_dir, 'job.env'), 'w') as f:
+        f.write(f"DF_CONFIG={shlex.quote(config)}\nDF_PREFIX={shlex.quote(prefix)}\nN_JOBS={int(njobs)}\n")
+
+
 def run_grid(inputfiles):
     # 1) dir/file name style
     JobStartTime = datetime.datetime.now()
     timestamp =  JobStartTime.strftime('%Y_%m_%d_%H%M%S')
 
-    # 2) Define MasterJobDir -- produce grid job submission scripts in $CAFPYANA_GRID_OUT_DIR
+    # 2) MasterJobDir (job bundle + metadata) on local disk; outputs on /pnfs scratch
     CAFPYANA_GRID_OUT_DIR = os.environ['CAFPYANA_GRID_OUT_DIR']
-    MasterJobDir = CAFPYANA_GRID_OUT_DIR + "/logs/" + timestamp + '__' + args.output + "_log"
+    MasterJobDir = grid_job_dir() + "/logs/" + timestamp + '__' + args.output + "_log"
     OutputDir = CAFPYANA_GRID_OUT_DIR + "/dfs/" + timestamp + '__' + args.output
-    os.system('mkdir -p ' + MasterJobDir)
+    os.makedirs(MasterJobDir)
     # create the output dir here too: ifdh mkdir_p on the worker can fail silently
+    # (mkdir on /pnfs is a metadata operation and works; writing file contents does not)
     os.system('mkdir -p ' + OutputDir)
 
     # 3) grid job is based on number of files
@@ -182,30 +211,10 @@ def run_grid(inputfiles):
 
     NInputfiles = len(inputfiles)
     print("Number of Grid Jobs: %d, number of input caf files: %d" % (ngrid, NInputfiles))
+    print("Job dir: " + MasterJobDir)
 
-    # 4) prepare bash scripts for each job and make tarball
-    flistForEachJob = []
-    for i in range(0,ngrid):
-        flistForEachJob.append( [] )
-
-    for i_line in range(0,len(inputfiles)):
-        flistForEachJob[i_line%ngrid].append(inputfiles[i_line])
-
-    for i_flist in range(0,len(flistForEachJob)):
-        flist = flistForEachJob[i_flist]
-        out = open(MasterJobDir + '/run_%s.sh'%(i_flist),'w')
-        out.write('#!/bin/bash\n')
-        cmd = 'python run_df_maker.py -c ' + args.config + ' -o ' + args.output + '_%d'%i_flist + '.df -ncpu 1 -i'
-        for i_f in range(0,len(flist)):
-            out.write('echo "[run_%s.sh] input %d : %s"\n'%(i_flist, i_f, flist[i_f]))
-            if i_f == 0:
-                cmd += ' ' + flist[i_f].split('/')[-1]
-            else: 
-                cmd += ',' + flist[i_f].split('/')[-1]
-            out.write('xrdcp ' + flist[i_f] + ' .\n') ## -- for checking auth
-        out.write('ls -alh\n')
-        out.write(cmd)
-        out.close()
+    # 4) one input list for all jobs; each job selects its own CAFs by index
+    write_job_inputs(MasterJobDir, inputfiles, ngrid, args.output, args.config)
 
     os.system('cp ./bin/grid_executable.sh %s' %MasterJobDir)
 
@@ -231,6 +240,7 @@ def run_grid(inputfiles):
     with open('submit_info.json', 'w') as f:
         json.dump({
             "output": args.output, "config": args.config, "output_dir": OutputDir,
+            "job_dir": MasterJobDir,
             "n_jobs": ngrid, "n_inputs": NInputfiles, "submitted": timestamp,
             "git_commit": GIT_COMMIT,
         }, f, indent=2)
@@ -257,27 +267,39 @@ def resubmit_missing(log_dir):
             sys.exit(f"can't parse submission name from {log_dir} (and no submit_info.json)")
         prefix = m.group(2)
         OutputDir = os.environ['CAFPYANA_GRID_OUT_DIR'] + '/dfs/' + m.group(1) + '__' + prefix
-    scripts = sorted((int(re.match(r'run_(\d+)\.sh$', f).group(1)) for f in os.listdir(log_dir)
-                      if re.match(r'run_(\d+)\.sh$', f)))
-    if not scripts:
-        sys.exit(f"no run_K.sh scripts in {log_dir}")
-    missing = [k for k in scripts
+    # Job indices of the original submission. Current layout: filelist.txt + job.env (N_JOBS is
+    # the original job count, also in a resubmit dir). Older layout: one run_K.sh per job.
+    env_path = os.path.join(log_dir, 'job.env')
+    new_layout = os.path.isfile(env_path)
+    if new_layout:
+        env = dict(shlex.split(l)[0].split('=', 1) for l in open(env_path) if '=' in l)
+        jobs = list(range(int(env['N_JOBS'])))
+    else:
+        jobs = sorted((int(re.match(r'run_(\d+)\.sh$', f).group(1)) for f in os.listdir(log_dir)
+                       if re.match(r'run_(\d+)\.sh$', f)))
+        if not jobs:
+            sys.exit(f"neither job.env nor run_K.sh scripts in {log_dir}")
+    missing = [k for k in jobs
                if not (os.path.isfile(f"{OutputDir}/{prefix}_{k}.df")
                        and os.path.getsize(f"{OutputDir}/{prefix}_{k}.df") > 0)]
-    print(f"{len(scripts)} job(s) in {log_dir}; outputs in {OutputDir}; {len(missing)} missing: {missing}")
+    print(f"{len(jobs)} job(s) in {log_dir}; outputs in {OutputDir}; {len(missing)} missing: {missing}")
     if not missing:
         return
 
     timestamp = datetime.datetime.now().strftime('%Y_%m_%d_%H%M%S')
-    new_dir = os.environ['CAFPYANA_GRID_OUT_DIR'] + '/logs/' + timestamp + '__' + prefix + '_resubmit_log'
+    new_dir = grid_job_dir() + '/logs/' + timestamp + '__' + prefix + '_resubmit_log'
     os.makedirs(new_dir)
     for name in ('cafpyana.tar.gz', 'XRootD', 'pyxrootd', 'xrootd.libs'):
         src = os.path.join(log_dir, name)
         if not os.path.exists(src):
             sys.exit(f"{src} missing -- can't reproduce the original job environment")
         (shutil.copytree if os.path.isdir(src) else shutil.copy2)(src, os.path.join(new_dir, name))
-    for j, k in enumerate(missing):
-        shutil.copy2(os.path.join(log_dir, f'run_{k}.sh'), os.path.join(new_dir, f'run_{j}.sh'))
+    if new_layout:
+        for name in ('filelist.txt', 'job.env'):
+            shutil.copy2(os.path.join(log_dir, name), os.path.join(new_dir, name))
+    else:
+        for j, k in enumerate(missing):
+            shutil.copy2(os.path.join(log_dir, f'run_{k}.sh'), os.path.join(new_dir, f'run_{j}.sh'))
     with open(os.path.join(new_dir, 'process_map.txt'), 'w') as f:
         f.write('\n'.join(str(k) for k in missing) + '\n')
     CAFPYANA_WD = os.environ.get('CAFPYANA_WD', os.path.dirname(os.path.abspath(__file__)))

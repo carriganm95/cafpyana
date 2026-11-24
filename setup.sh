@@ -16,6 +16,7 @@ if [[ $machine == *sbnd* ]]; then
   echo "working on a sbnd machine"
   source "${SPACK_ROOT}"
   export CAFPYANA_GRID_OUT_DIR="/pnfs/sbnd/scratch/users/$USER/cafpyana_out"
+  export CAFPYANA_GRID_JOB_DIR="/exp/sbnd/data/users/$USER/cafpyana_grid"
   export CAFPYANA_TMP_SCRATCH="/pnfs/sbnd/scratch/users/$USER/cafpyana_tmp"
   mkdir -p $CAFPYANA_GRID_OUT_DIR
   mkdir -p $CAFPYANA_TMP_SCRATCH
@@ -24,6 +25,7 @@ if [[ $machine == *icarus* ]]; then
   echo "working on a icarus machine"
   source "${SPACK_ROOT}"
   export CAFPYANA_GRID_OUT_DIR="/pnfs/icarus/scratch/users/$USER/cafpyana_out"
+  export CAFPYANA_GRID_JOB_DIR="/exp/icarus/data/users/$USER/cafpyana_grid"
   export CAFPYANA_TMP_SCRATCH="/pnfs/icarus/scratch/users/$USER/cafpyana_tmp"
   mkdir -p $CAFPYANA_GRID_OUT_DIR
   mkdir -p $CAFPYANA_TMP_SCRATCH
@@ -32,6 +34,7 @@ if [[ $machine == *jupyter* ]]; then
   echo "working on a sbnd machine"
   source "${SPACK_ROOT}"
   export CAFPYANA_GRID_OUT_DIR="/pnfs/sbnd/scratch/users/$USER/cafpyana_out"
+  export CAFPYANA_GRID_JOB_DIR="/exp/sbnd/data/users/$USER/cafpyana_grid"
   export CAFPYANA_TMP_SCRATCH="/scratch/7DayLifetime/$USER/tmp_failover"
   mkdir -p $CAFPYANA_GRID_OUT_DIR
   mkdir -p $CAFPYANA_TMP_SCRATCH

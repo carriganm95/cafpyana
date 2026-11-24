@@ -61,6 +61,15 @@ sample, explicit yes per submission (see `CLAUDE.md`).
 
   Note: reading the CAF directly over xrootd (instead of a local copy, as grid jobs do) left
   the process hung at exit after finishing; local copies exit cleanly.
+- 2026-11-24 first mc1e20 submission attempt (`2026_11_24_093021__nueNp0Pi_mc1e20_v5`) hung
+  before `jobsub_submit` (writing the job bundle through the /pnfs mount blocks forever; the
+  process was killed, 0 jobs submitted). Empty dirs left in `$CAFPYANA_GRID_OUT_DIR/logs/` and
+  `/dfs/` under that name. Fix (uncommitted at test time): bundle + metadata now built in
+  `$CAFPYANA_GRID_JOB_DIR` (`/exp/sbnd/data/users/$USER/cafpyana_grid`), and one `filelist.txt` +
+  `job.env` replace the per-job `run_K.sh` (job K takes lines K, K+N, ...). Local test: 3-job
+  dev bundle, `grid_executable.sh` run as PROCESS=1 in a clean env
+  (`v5_tests/grid_worker_test/`): picked CAF #2 (run18255_2), exit 0, `gtest_1.df` 592 slices,
+  `check_dfs` OK; `-resubmit_missing` on the bundle mapped renumbered jobs 0,1 -> 1,2 correctly.
 
 ## 2026-10-29 selection (full map, no skim): 20261029_v4
 - command: `run_event_selection_map.py -submit_grid -selection both` (manifest created 2026-10-29 12:02)

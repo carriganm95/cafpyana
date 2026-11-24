@@ -50,9 +50,12 @@ cd $REPO && source setup.sh >/dev/null 2>&1 && \
 python run_df_maker.py -ngrid <N> -c analysis_village/nueNp0Pi/df_maker_configs/nuecc_<mc|data>.py \
   -o nueNp0Pi_<key>_v<N> -l filelists/filelist_<key>.txt
 ```
-It prints the jobsub id, writes job scripts + `submit_info.json` to
-`$CAFPYANA_GRID_OUT_DIR/logs/<ts>__<name>_log/`, and outputs go to
-`$CAFPYANA_GRID_OUT_DIR/dfs/<ts>__<name>/<name>_K.df`. Then use the `grid-jobs` skill to watch
+It prints the jobsub id, builds the job bundle (`filelist.txt`, `job.env`, code tarball) and
+`submit_info.json` in `$CAFPYANA_GRID_JOB_DIR/logs/<ts>__<name>_log/` (local disk,
+`/exp/sbnd/data/users/$USER/cafpyana_grid`; writing to /pnfs through the mount hangs, and grid
+jobs never read this dir -- jobsub uploads the bundle), and outputs go to
+`$CAFPYANA_GRID_OUT_DIR/dfs/<ts>__<name>/<name>_K.df`. Job K processes lines K, K+N, K+2N, ...
+of `filelist.txt`. Then use the `grid-jobs` skill to watch
 and recover failed jobs.
 
 ## 5. Stage to persistent storage (scratch gets purged; grid can't read /exp)
